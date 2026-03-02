@@ -1,13 +1,25 @@
-.PHONY: check test self-test
+.PHONY: check test lint typecheck fmt ci
 
 # Compile check — verify all Python files parse correctly
 check:
 	python3 -m compileall -q llm_switchboard/ tests/ bin/llm-switchboard
 
-# Run the test suite via unittest discovery
+# Run the test suite via pytest
 test:
-	python3 -m unittest discover -s tests -v
+	pytest -v
 
-# Run tests via the CLI's --self-test flag
-self-test:
-	python3 bin/llm-switchboard --self-test
+# Lint with ruff
+lint:
+	ruff check .
+
+# Type check with mypy
+typecheck:
+	mypy llm_switchboard/
+
+# Auto-format with ruff
+fmt:
+	ruff check --fix .
+	ruff format .
+
+# Run everything
+ci: check test lint typecheck

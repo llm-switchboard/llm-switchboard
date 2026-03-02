@@ -45,10 +45,16 @@ Generic file-based caching with TTL. Used for Open WebUI connection config and O
 Parses `free_providers.conf` into `FreeTierRule` objects. Handles Gemini pricing cache (fetch from Google, parse markdown, cache locally). Provides `is_free_tier()` for model classification.
 
 ### session.py
-`SessionWatcher`: background thread that tails Claude Code's session JSONL files to track token usage in real-time. Also handles `usage.json` persistence (load, save, record, aggregate).
+`SessionWatcher`: background thread that tails Claude Code's session JSONL files to track token usage in real-time. Thread-safe counter updates via `threading.Lock`. Also handles `usage.json` persistence (load, save, record, aggregate) with file locking to prevent concurrent write races.
+
+### compat.py
+Agent compatibility testing — probes models via chat completions to evaluate coding-agent capability. Defines test prompts and validators for format compliance, constraint following, hallucination detection, and tool-call handling. Persistence with file locking.
+
+### endpoint.py
+Endpoint resolution and auto-detection. Probes Open WebUI to determine the best API surface (OpenAI vs Anthropic). Supports `--api-mode` override and `--auto-prefer` hints. Detection results are cached for 1 hour.
 
 ### util.py
-Pure functions with no side effects (except `die()`): string sanitization, ANSI stripping, price/token formatting, color constants, terminal detection.
+Utility functions: string sanitization, ANSI stripping, price/token formatting, color constants, terminal detection, `die()` for fatal errors, `locked_file()` context manager for file locking.
 
 ## Global State
 
@@ -56,7 +62,7 @@ Model data is stored in module-level globals in `tui.py` (for rendering) and pop
 
 ## Key Design Constraints
 
-- **stdlib-only**: No pip dependencies. Uses `urllib`, `json`, `termios`, `tty`, `select`, `threading`, `subprocess`.
+- **stdlib-only**: No pip dependencies. Uses `urllib`, `json`, `termios`, `tty`, `select`, `threading`, `subprocess`, `fcntl`.
 - **Single process**: Claude Code runs as a subprocess. The watcher thread tails its output files.
 - **Path-based config**: XDG-compliant. Config and cache are separate directories.
 - **Backwards compatible CLI**: All original flags work. New flags are additive.

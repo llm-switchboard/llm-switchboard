@@ -5,24 +5,29 @@ import unittest
 from pathlib import Path
 
 from llm_switchboard.config import (
-    fav_list, fav_has, fav_add, fav_rm, last_model_read, last_model_write,
     APP_NAME,
+    fav_add,
+    fav_has,
+    fav_list,
+    fav_rm,
+    last_model_read,
+    last_model_write,
 )
 
 
 class TestConfigPaths(unittest.TestCase):
-
     def test_config_dir_uses_app_name(self):
         from llm_switchboard.config import CONFIG_DIR
+
         self.assertEqual(CONFIG_DIR.name, APP_NAME)
 
     def test_cache_dir_uses_app_name(self):
         from llm_switchboard.config import CACHE_DIR
+
         self.assertEqual(CACHE_DIR.name, APP_NAME)
 
 
 class TestFavorites(unittest.TestCase):
-
     def setUp(self):
         self.tmpdir = tempfile.mkdtemp()
         self.fav_file = Path(self.tmpdir) / "favorites.conf"
@@ -68,7 +73,6 @@ class TestFavorites(unittest.TestCase):
 
 
 class TestLastModel(unittest.TestCase):
-
     def setUp(self):
         self.tmpdir = tempfile.mkdtemp()
         self.last_file = Path(self.tmpdir) / "last_model"

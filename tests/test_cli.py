@@ -8,7 +8,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 # Path to the entrypoint script
 BIN = str(Path(__file__).resolve().parent.parent / "bin" / "llm-switchboard")
@@ -54,7 +54,9 @@ class TestBrokenPipe(unittest.TestCase):
     def test_help_pipe_to_head(self):
         result = subprocess.run(
             f"{sys.executable} {BIN} --help | head -1",
-            shell=True, capture_output=True, text=True,
+            shell=True,
+            capture_output=True,
+            text=True,
             env={**os.environ, "OPENWEBUI_API_KEY": "test-key"},
             timeout=10,
         )
@@ -65,8 +67,8 @@ class TestBrokenPipe(unittest.TestCase):
 
 # ─── --clear-detect-cache ────────────────────────────────────────────
 
-class TestClearDetectCache(unittest.TestCase):
 
+class TestClearDetectCache(unittest.TestCase):
     def setUp(self):
         self.tmpdir = tempfile.mkdtemp()
         self.cache_file = Path(self.tmpdir) / "endpoint_detect.json"
@@ -74,6 +76,7 @@ class TestClearDetectCache(unittest.TestCase):
     def test_clear_existing(self):
         self.cache_file.write_text('{"mode":"openai"}')
         from llm_switchboard.cli import cmd_clear_detect_cache
+
         with patch("llm_switchboard.cli.DETECT_CACHE", self.cache_file):
             buf = io.StringIO()
             with patch("sys.stdout", buf):
@@ -83,6 +86,7 @@ class TestClearDetectCache(unittest.TestCase):
 
     def test_clear_missing(self):
         from llm_switchboard.cli import cmd_clear_detect_cache
+
         with patch("llm_switchboard.cli.DETECT_CACHE", self.cache_file):
             buf = io.StringIO()
             with patch("sys.stdout", buf):
@@ -91,40 +95,36 @@ class TestClearDetectCache(unittest.TestCase):
 
     def test_parse_args(self):
         from llm_switchboard.cli import _parse_args
+
         cmd, filt, extra, opts = _parse_args(["--clear-detect-cache"])
         self.assertEqual(cmd, "clear-detect-cache")
 
 
 # ─── --doctor ────────────────────────────────────────────────────────
 
+
 def _fake_endpoint(mode="openai"):
     from llm_switchboard.endpoint import Endpoint
-    return Endpoint("http://localhost:3100", mode,
-                    "/api/chat/completions" if mode == "openai" else "/api/v1/messages",
-                    "/api/models", "auto-detect", "test")
+
+    return Endpoint("http://localhost:3100", mode, "/api/chat/completions" if mode == "openai" else "/api/v1/messages", "/api/models", "auto-detect", "test")
 
 
 class TestDoctor(unittest.TestCase):
-
-    def _run_doctor(self, mode="openai", models_resp=None, chat_ok=True,
-                    compat_results=None, raise_exc=None):
+    def _run_doctor(self, mode="openai", models_resp=None, chat_ok=True, compat_results=None, raise_exc=None):
         """Run cmd_doctor with mocked probes. Returns (exit_code, stdout)."""
         from llm_switchboard.cli import cmd_doctor
+
         ep = _fake_endpoint(mode)
 
         patches = {
             "llm_switchboard.cli._resolve_api": MagicMock(return_value=ep),
             "llm_switchboard.cli.OPENWEBUI_KEY": "test-key",
             "llm_switchboard.cli._probe_get": MagicMock(return_value=models_resp),
-            "llm_switchboard.cli._looks_like_models_list": MagicMock(
-                return_value=(models_resp is not None and "data" in (models_resp or {}))),
-            "llm_switchboard.cli._fetch_any_model_id": MagicMock(
-                return_value=("test-model", "/api/models") if models_resp else (None, "/api/models")),
-            "llm_switchboard.cli._probe_openai_chat": MagicMock(
-                return_value="/api/chat/completions" if chat_ok else None),
+            "llm_switchboard.cli._looks_like_models_list": MagicMock(return_value=(models_resp is not None and "data" in (models_resp or {}))),
+            "llm_switchboard.cli._fetch_any_model_id": MagicMock(return_value=("test-model", "/api/models") if models_resp else (None, "/api/models")),
+            "llm_switchboard.cli._probe_openai_chat": MagicMock(return_value="/api/chat/completions" if chat_ok else None),
             "llm_switchboard.cli._probe_anthropic_chat": MagicMock(return_value=chat_ok),
-            "llm_switchboard.cli.load_compat": MagicMock(
-                return_value={"results": compat_results or {}}),
+            "llm_switchboard.cli.load_compat": MagicMock(return_value={"results": compat_results or {}}),
         }
 
         # Mock COMPAT_FILE and DETECT_CACHE to non-existent paths
@@ -145,8 +145,7 @@ class TestDoctor(unittest.TestCase):
 
         buf = io.StringIO()
         err_buf = io.StringIO()
-        with patch.multiple("llm_switchboard.cli", **{k.split(".")[-1]: v
-                            for k, v in patches.items() if k.startswith("llm_switchboard.cli.")}):
+        with patch.multiple("llm_switchboard.cli", **{k.split(".")[-1]: v for k, v in patches.items() if k.startswith("llm_switchboard.cli.")}):
             with patch("sys.stdout", buf), patch("sys.stderr", err_buf):
                 rc = cmd_doctor()
         return rc, buf.getvalue(), err_buf.getvalue()
@@ -209,14 +208,15 @@ class TestDoctor(unittest.TestCase):
 
     def test_parse_args(self):
         from llm_switchboard.cli import _parse_args
+
         cmd, filt, extra, opts = _parse_args(["--doctor"])
         self.assertEqual(cmd, "doctor")
 
 
 # ─── Compat report ───────────────────────────────────────────────────
 
-class TestCompatReport(unittest.TestCase):
 
+class TestCompatReport(unittest.TestCase):
     def _make_compat_data(self):
         return {
             "results": {
@@ -230,8 +230,10 @@ class TestCompatReport(unittest.TestCase):
                         "tool_call_chaining": {"passed": True, "latency_ms": 100},
                         "tool_call_error_recovery": {"passed": True, "latency_ms": 100},
                     },
-                    "pass_count": 6, "fail_count": 0,
-                    "last_status": "pass", "latency_ms": 600,
+                    "pass_count": 6,
+                    "fail_count": 0,
+                    "last_status": "pass",
+                    "latency_ms": 600,
                 },
                 "model-b": {
                     "last_run": "2026-01-01T00:00:00Z",
@@ -243,14 +245,17 @@ class TestCompatReport(unittest.TestCase):
                         "tool_call_chaining": {"passed": False, "latency_ms": 100},
                         "tool_call_error_recovery": {"passed": False, "latency_ms": 100},
                     },
-                    "pass_count": 1, "fail_count": 5,
-                    "last_status": "fail", "latency_ms": 600,
+                    "pass_count": 1,
+                    "fail_count": 5,
+                    "last_status": "fail",
+                    "latency_ms": 600,
                 },
             }
         }
 
     def test_text_report_has_legend(self):
         from llm_switchboard.cli import cmd_compat_report
+
         data = self._make_compat_data()
         buf = io.StringIO()
         with patch("llm_switchboard.cli.load_compat", return_value=data):
@@ -263,6 +268,7 @@ class TestCompatReport(unittest.TestCase):
 
     def test_text_report_has_failure_reason(self):
         from llm_switchboard.cli import cmd_compat_report
+
         data = self._make_compat_data()
         buf = io.StringIO()
         with patch("llm_switchboard.cli.load_compat", return_value=data):
@@ -275,6 +281,7 @@ class TestCompatReport(unittest.TestCase):
 
     def test_json_report_fields(self):
         from llm_switchboard.cli import cmd_compat_report
+
         data = self._make_compat_data()
         buf = io.StringIO()
         with patch("llm_switchboard.cli.load_compat", return_value=data):
@@ -298,10 +305,13 @@ class TestCompatReport(unittest.TestCase):
 
     def test_model_summary_helper(self):
         from llm_switchboard.cli import _compat_model_summary
+
         entry = {
             "last_status": "partial",
-            "pass_count": 4, "fail_count": 2,
-            "latency_ms": 800, "last_run": "2026-01-01T00:00:00Z",
+            "pass_count": 4,
+            "fail_count": 2,
+            "latency_ms": 800,
+            "last_run": "2026-01-01T00:00:00Z",
             "tests": {
                 "format_compliance": {"passed": True, "latency_ms": 100},
                 "constraint_following": {"passed": False, "latency_ms": 100},
@@ -315,6 +325,183 @@ class TestCompatReport(unittest.TestCase):
         self.assertEqual(s["agent_status"], "partial")
         self.assertIn("constraint_following", s["failed_tests"])
         self.assertEqual(s["required_failed"], [])  # no required tests failed
+
+
+# ─── _parse_args comprehensive coverage ──────────────────────────────
+
+
+class TestParseArgs(unittest.TestCase):
+    def _parse(self, argv):
+        from llm_switchboard.cli import _parse_args
+
+        return _parse_args(argv)
+
+    # ── Simple flags ──
+
+    def test_empty_args(self):
+        cmd, filt, extra, opts = self._parse([])
+        self.assertIsNone(cmd)
+        self.assertIsNone(filt)
+        self.assertEqual(extra, [])
+
+    def test_version(self):
+        cmd, filt, extra, opts = self._parse(["--version"])
+        self.assertEqual(cmd, "version")
+
+    def test_doctor(self):
+        cmd, _, _, _ = self._parse(["--doctor"])
+        self.assertEqual(cmd, "doctor")
+
+    def test_clear_detect_cache(self):
+        cmd, _, _, _ = self._parse(["--clear-detect-cache"])
+        self.assertEqual(cmd, "clear-detect-cache")
+
+    def test_help_short(self):
+        cmd, _, _, _ = self._parse(["-h"])
+        self.assertEqual(cmd, "help")
+
+    def test_help_long(self):
+        cmd, _, _, _ = self._parse(["--help"])
+        self.assertEqual(cmd, "help")
+
+    # ── --list-models variants ──
+
+    def test_list_models_plain(self):
+        cmd, _, _, opts = self._parse(["--list-models"])
+        self.assertEqual(cmd, "list-models")
+        self.assertNotIn("json", opts)
+
+    def test_list_models_json(self):
+        cmd, _, _, opts = self._parse(["--list-models", "--json"])
+        self.assertEqual(cmd, "list-models")
+        self.assertTrue(opts.get("json"))
+
+    def test_list_models_free_only(self):
+        cmd, _, _, opts = self._parse(["--list-models", "--free-only"])
+        self.assertEqual(cmd, "list-models")
+        self.assertTrue(opts.get("free_only"))
+
+    def test_list_models_agent_ok(self):
+        cmd, _, _, opts = self._parse(["--list-models", "--agent-ok"])
+        self.assertEqual(cmd, "list-models")
+        self.assertTrue(opts.get("agent_ok"))
+
+    def test_list_models_provider(self):
+        cmd, _, _, opts = self._parse(["--list-models", "--provider", "openai"])
+        self.assertEqual(cmd, "list-models")
+        self.assertEqual(opts["provider"], "openai")
+
+    # ── --select ──
+
+    def test_select(self):
+        cmd, _, extra, opts = self._parse(["--select", "gpt-4", "--some-flag"])
+        self.assertEqual(cmd, "select")
+        self.assertEqual(opts["select_model"], "gpt-4")
+        self.assertEqual(extra, ["--some-flag"])
+
+    # ── --favorites / --fav / --free-tier / --setup ──
+
+    def test_favorites(self):
+        cmd, _, _, _ = self._parse(["--favorites"])
+        self.assertEqual(cmd, "favorites")
+
+    def test_fav(self):
+        cmd, _, _, _ = self._parse(["--fav"])
+        self.assertEqual(cmd, "fav")
+
+    def test_free_tier(self):
+        cmd, _, _, _ = self._parse(["--free-tier"])
+        self.assertEqual(cmd, "free-tier")
+
+    def test_setup(self):
+        cmd, _, _, _ = self._parse(["--setup"])
+        self.assertEqual(cmd, "setup")
+
+    def test_stats_short(self):
+        cmd, _, _, _ = self._parse(["-s"])
+        self.assertEqual(cmd, "stats")
+
+    def test_stats_long(self):
+        cmd, _, _, _ = self._parse(["--stats"])
+        self.assertEqual(cmd, "stats")
+
+    # ── --compat-test variants ──
+
+    def test_compat_test_all(self):
+        cmd, _, _, opts = self._parse(["--compat-test", "--all"])
+        self.assertEqual(cmd, "compat-test")
+        self.assertTrue(opts.get("compat_all"))
+
+    def test_compat_test_model(self):
+        cmd, _, _, opts = self._parse(["--compat-test", "gpt-4o"])
+        self.assertEqual(cmd, "compat-test")
+        self.assertEqual(opts["compat_model"], "gpt-4o")
+
+    # ── --compat-report ──
+
+    def test_compat_report_plain(self):
+        cmd, _, _, opts = self._parse(["--compat-report"])
+        self.assertEqual(cmd, "compat-report")
+        self.assertNotIn("json", opts)
+
+    def test_compat_report_json(self):
+        cmd, _, _, opts = self._parse(["--compat-report", "--json"])
+        self.assertEqual(cmd, "compat-report")
+        self.assertTrue(opts.get("json"))
+
+    # ── Global options: --api-mode, --base-url, --auto-prefer ──
+
+    def test_api_mode(self):
+        cmd, _, _, opts = self._parse(["--api-mode", "anthropic", "--version"])
+        self.assertEqual(cmd, "version")
+        self.assertEqual(opts["api_mode"], "anthropic")
+
+    def test_base_url(self):
+        cmd, _, _, opts = self._parse(["--base-url", "http://localhost:8080", "--doctor"])
+        self.assertEqual(cmd, "doctor")
+        self.assertEqual(opts["base_url"], "http://localhost:8080")
+
+    def test_auto_prefer(self):
+        cmd, _, _, opts = self._parse(["--auto-prefer", "local", "--version"])
+        self.assertEqual(cmd, "version")
+        self.assertEqual(opts["auto_prefer"], "local")
+
+    # ── Missing value errors ──
+
+    def test_api_mode_missing_value(self):
+        with self.assertRaises(SystemExit):
+            self._parse(["--api-mode"])
+
+    def test_base_url_missing_value(self):
+        with self.assertRaises(SystemExit):
+            self._parse(["--base-url"])
+
+    def test_auto_prefer_missing_value(self):
+        with self.assertRaises(SystemExit):
+            self._parse(["--auto-prefer"])
+
+    def test_provider_missing_value(self):
+        with self.assertRaises(SystemExit):
+            self._parse(["--list-models", "--provider"])
+
+    # ── Filter word / passthrough ──
+
+    def test_filter_word(self):
+        cmd, filt, extra, _ = self._parse(["gpt"])
+        self.assertIsNone(cmd)
+        self.assertEqual(filt, "gpt")
+
+    def test_passthrough_to_claude(self):
+        cmd, filt, extra, _ = self._parse(["--some-claude-flag", "value"])
+        self.assertIsNone(cmd)
+        self.assertIsNone(filt)
+        self.assertEqual(extra, ["--some-claude-flag", "value"])
+
+    def test_global_only_no_command(self):
+        """Global flags with no command should return None cmd."""
+        cmd, filt, extra, opts = self._parse(["--api-mode", "openai"])
+        self.assertIsNone(cmd)
+        self.assertEqual(opts["api_mode"], "openai")
 
 
 if __name__ == "__main__":

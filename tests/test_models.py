@@ -2,11 +2,10 @@
 
 import unittest
 
-from llm_switchboard.models import provider_from_url, format_ctx, DOMAIN_TO_PROVIDER
+from llm_switchboard.models import DOMAIN_TO_PROVIDER, format_ctx, provider_from_url
 
 
 class TestProviderFromUrl(unittest.TestCase):
-
     def test_groq(self):
         self.assertEqual(provider_from_url("https://api.groq.com/openai/v1"), "groq")
 
@@ -17,10 +16,7 @@ class TestProviderFromUrl(unittest.TestCase):
         self.assertEqual(provider_from_url("https://api.anthropic.com/v1"), "anthropic")
 
     def test_gemini(self):
-        self.assertEqual(
-            provider_from_url("https://generativelanguage.googleapis.com/v1"),
-            "gemini"
-        )
+        self.assertEqual(provider_from_url("https://generativelanguage.googleapis.com/v1"), "gemini")
 
     def test_cerebras(self):
         self.assertEqual(provider_from_url("https://api.cerebras.ai/v1"), "cerebras")
@@ -50,7 +46,6 @@ class TestProviderFromUrl(unittest.TestCase):
 
 
 class TestFormatCtx(unittest.TestCase):
-
     def test_millions(self):
         self.assertEqual(format_ctx(1_000_000), "1M")
         self.assertEqual(format_ctx(2_000_000), "2M")

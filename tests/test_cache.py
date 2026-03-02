@@ -10,7 +10,6 @@ from llm_switchboard.cache import fetch_cached
 
 
 class TestFetchCached(unittest.TestCase):
-
     def setUp(self):
         self.tmpdir = tempfile.mkdtemp()
 
@@ -23,6 +22,7 @@ class TestFetchCached(unittest.TestCase):
         cf.write_text(json.dumps(data))
 
         call_count = 0
+
         def mock_api(path, timeout):
             nonlocal call_count
             call_count += 1
@@ -38,6 +38,7 @@ class TestFetchCached(unittest.TestCase):
         # Set mtime to 2 hours ago
         old_time = time.time() - 7200
         import os
+
         os.utime(cf, (old_time, old_time))
 
         def mock_api(path, timeout):

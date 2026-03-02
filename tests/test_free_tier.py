@@ -2,11 +2,10 @@
 
 import unittest
 
-from llm_switchboard.free_tier import FreeTierRule, parse_free_tier_rules, is_free_tier
+from llm_switchboard.free_tier import FreeTierRule, is_free_tier, parse_free_tier_rules
 
 
 class TestFreeTierRuleParsing(unittest.TestCase):
-
     def test_simple_provider(self):
         rules = parse_free_tier_rules("groq\n")
         self.assertIn("groq", rules)
@@ -59,7 +58,6 @@ class TestFreeTierRuleParsing(unittest.TestCase):
 
 
 class TestFreeTierRuleMatches(unittest.TestCase):
-
     def test_all_models(self):
         r = FreeTierRule("groq", None, [])
         self.assertTrue(r.matches("llama-3.3-70b"))
@@ -101,7 +99,6 @@ class TestFreeTierRuleMatches(unittest.TestCase):
 
 
 class TestIsFreeTier(unittest.TestCase):
-
     def test_no_rules(self):
         self.assertFalse(is_free_tier("groq", "llama-3", {}))
 

@@ -18,20 +18,35 @@ import time
 import tty
 
 from .config import (
-    OPENWEBUI_URL, OPENWEBUI_KEY, FAV_FILE,
-    fav_list, last_model_read, last_model_write, ensure_dirs,
+    OPENWEBUI_KEY,
+    fav_list,
+    last_model_read,
+    last_model_write,
 )
-from .models import Model, PROVIDER_LIMITS, provider_from_url
+from .models import PROVIDER_LIMITS, Model
 from .session import SessionWatcher, claude_session_dir, record_session
 from .util import (
-    IS_TTY, IS_STDERR_TTY, IS_STDIN_TTY,
-    CYAN, GREEN, YELLOW, MAGENTA, BLUE, RED, WHITE,
-    DIM, BOLD, RESET, REVERSE,
-    visible_len, fmt_tokens, die,
+    BLUE,
+    BOLD,
+    CYAN,
+    DIM,
+    GREEN,
+    IS_STDERR_TTY,
+    IS_STDIN_TTY,
+    IS_TTY,
+    MAGENTA,
+    RED,
+    RESET,
+    REVERSE,
+    WHITE,
+    YELLOW,
+    die,
+    fmt_tokens,
+    visible_len,
 )
 
 # Re-export for the monolith shim
-_ANSI_RE = re.compile(r'\x1b\[[0-9;]*[a-zA-Z]')
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
 
 # ─── Global Model State ──────────────────────────────────────────────
 # Filled by fetch_models() in cli.py, referenced here for rendering.
@@ -52,6 +67,7 @@ def _get_compat_data() -> dict:
     global _COMPAT_DATA
     if _COMPAT_DATA is None:
         from .compat import load_compat
+
         _COMPAT_DATA = load_compat()
     return _COMPAT_DATA
 
@@ -103,6 +119,7 @@ def _setup_terminal_restore() -> None:
     atexit.register(_restore_termios)
     for sig in (signal.SIGINT, signal.SIGTERM):
         prev = signal.getsignal(sig)
+
         def handler(s, f, _prev=prev, _sig=sig):
             _restore_termios()
             if callable(_prev) and _prev not in (signal.SIG_DFL, signal.SIG_IGN):
@@ -112,15 +129,23 @@ def _setup_terminal_restore() -> None:
                 os.kill(os.getpid(), _sig)
             else:
                 sys.exit(128 + _sig)
+
         signal.signal(sig, handler)
 
 
 _CSI_MAP = {
-    'A': 'UP', 'B': 'DOWN', 'C': 'RIGHT', 'D': 'LEFT',
-    'H': 'HOME', 'F': 'END',
+    "A": "UP",
+    "B": "DOWN",
+    "C": "RIGHT",
+    "D": "LEFT",
+    "H": "HOME",
+    "F": "END",
 }
 _CSI_TILDE_MAP = {
-    '5': 'PGUP', '6': 'PGDN', '1': 'HOME', '4': 'END',
+    "5": "PGUP",
+    "6": "PGDN",
+    "1": "HOME",
+    "4": "END",
 }
 
 
@@ -149,31 +174,31 @@ def readkey() -> str:
         ch = _read1(fd)
         if not ch:
             return "EOF"
-        if ch == '\x1b':
+        if ch == "\x1b":
             if not _has_input(fd, 0.05):
                 return "ESC"
             ch2 = _read1(fd)
-            if ch2 == '[':
+            if ch2 == "[":
                 buf = ""
                 while _has_input(fd, 0.02):
                     c = _read1(fd)
-                    if c.isalpha() or c == '~':
-                        if c == '~':
+                    if c.isalpha() or c == "~":
+                        if c == "~":
                             return _CSI_TILDE_MAP.get(buf, "ESC")
                         return _CSI_MAP.get(c, "ESC")
                     buf += c
                 return "ESC"
-            elif ch2 == 'O':
+            elif ch2 == "O":
                 if _has_input(fd, 0.02):
                     c = _read1(fd)
                     return _CSI_MAP.get(c, "ESC")
                 return "ESC"
             return "ESC"
-        if ch == '\x03':
+        if ch == "\x03":
             return "CTRLC"
-        if ch == '\x04':
+        if ch == "\x04":
             return "EOF"
-        if ch == '\r' or ch == '\n':
+        if ch == "\r" or ch == "\n":
             return "ENTER"
         return ch
     finally:
@@ -224,6 +249,7 @@ def readline_input(prompt: str = "") -> str:
 
 # ─── Spinner ─────────────────────────────────────────────────────────
 
+
 class Spinner:
     FRAMES = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
     INTERVAL = 0.08
@@ -259,6 +285,7 @@ class Spinner:
 
 # ─── Screen ──────────────────────────────────────────────────────────
 
+
 def clear_screen() -> None:
     if IS_TTY:
         sys.stdout.write("\033[2J\033[H")
@@ -270,6 +297,7 @@ def _page_height() -> int:
 
 
 # ─── Model Metadata ─────────────────────────────────────────────────
+
 
 def model_meta(model_id: str, max_desc: int = 0) -> str:
     m = MODEL_MAP.get(model_id)
@@ -292,7 +320,7 @@ def model_meta(model_id: str, max_desc: int = 0) -> str:
             if max_desc < 15:
                 desc = ""
             else:
-                desc = desc[:max_desc - 3].rsplit(" ", 1)[0] + "..."
+                desc = desc[: max_desc - 3].rsplit(" ", 1)[0] + "..."
         if desc:
             parts.append(f"{DIM}{desc}{RESET}")
     # AGENT badge from compat test results
@@ -313,12 +341,14 @@ def model_meta(model_id: str, max_desc: int = 0) -> str:
 
 # ─── Cost Estimation ─────────────────────────────────────────────────
 
+
 def _estimate_cost_raw(model_id: str, input_tokens: int, output_tokens: int) -> float | None:
     m = MODEL_MAP.get(model_id)
     if not m or not m.price:
         return None
     import re as _re
-    match = _re.match(r'\$([0-9.]+)/\$([0-9.]+)', m.price)
+
+    match = _re.match(r"\$([0-9.]+)/\$([0-9.]+)", m.price)
     if not match:
         return None
     in_rate = float(match.group(1))
@@ -336,6 +366,7 @@ def _estimate_cost(model_id: str, input_tokens: int, output_tokens: int) -> str 
 
 
 # ─── Launch ──────────────────────────────────────────────────────────
+
 
 def _launch_banner(model_id: str) -> None:
     m = MODEL_MAP.get(model_id)
@@ -363,7 +394,7 @@ def _launch_banner(model_id: str) -> None:
     if m and m.cost == "free" and provider in PROVIDER_LIMITS:
         lines.append(f"  {DIM}Limits: {PROVIDER_LIMITS[provider]}{RESET}")
 
-    content_width = max(visible_len(l) for l in lines)
+    content_width = max(visible_len(ln) for ln in lines)
     box_w = content_width + 2
 
     print()
@@ -418,11 +449,11 @@ def launch_claude(model_id: str, extra_args: list[str], pause_after: bool = Fals
     watcher.start()
 
     # Resolve endpoint for Claude Code launch
-    from .endpoint import resolve_endpoint, load_api_mode
-    from .cli import _CLI_API_MODE, _CLI_BASE_URL, _CLI_AUTO_PREFER
+    from .cli import _CLI_API_MODE, _CLI_AUTO_PREFER, _CLI_BASE_URL
+    from .endpoint import load_api_mode, resolve_endpoint
+
     ep_mode = _CLI_API_MODE or load_api_mode()
-    ep = resolve_endpoint(mode=ep_mode, base_url=_CLI_BASE_URL,
-                          prefer=_CLI_AUTO_PREFER)
+    ep = resolve_endpoint(mode=ep_mode, base_url=_CLI_BASE_URL, prefer=_CLI_AUTO_PREFER)
 
     env = os.environ.copy()
     env["ANTHROPIC_BASE_URL"] = f"{ep.base_url}/api"
@@ -447,9 +478,12 @@ def launch_claude(model_id: str, extra_args: list[str], pause_after: bool = Fals
         die(f"Failed to launch claude: {e}")
     finally:
         signal.signal(signal.SIGINT, prev_sigint)
+        global _COMPAT_DATA
+        _COMPAT_DATA = None
 
 
 # ─── fzf ─────────────────────────────────────────────────────────────
+
 
 def has_fzf() -> bool:
     return shutil.which("fzf") is not None
@@ -477,8 +511,14 @@ def run_fzf_search(initial: str = "", provider: str = "") -> str | None:
 
     prompt = f"[{provider}] Model> " if provider else "Model> "
     cmd = [
-        "fzf", "--ansi", f"--prompt={prompt}", f"--query={initial}",
-        "--height=40%", "--reverse", "--no-mouse", "--layout=reverse-list",
+        "fzf",
+        "--ansi",
+        f"--prompt={prompt}",
+        f"--query={initial}",
+        "--height=40%",
+        "--reverse",
+        "--no-mouse",
+        "--layout=reverse-list",
     ]
     try:
         r = subprocess.run(cmd, input="\n".join(lines), capture_output=True, text=True)
@@ -491,7 +531,7 @@ def run_fzf_search(initial: str = "", provider: str = "") -> str | None:
     idx = sel.find("] ")
     if idx < 0:
         return None
-    rest = sel[idx + 2:].strip()
+    rest = sel[idx + 2 :].strip()
     model_id = rest.split("  ")[0].strip()
     return model_id or None
 
@@ -592,8 +632,9 @@ def render_main(cursor: int = 0) -> tuple[list[MainItem], int]:
     hint = "↑↓/jk=move  Enter=select  1-9=fav  a-z=provider  F=free  /=search  q=quit"
     print(f"  {DIM}{hint}{RESET}")
     # Show API mode if not default
-    from .endpoint import load_api_mode
     from .cli import _CLI_API_MODE, _CLI_BASE_URL
+    from .endpoint import load_api_mode
+
     api_mode = _CLI_API_MODE or load_api_mode()
     if api_mode != "auto" or _CLI_BASE_URL:
         mode_info = f"mode={api_mode}"
@@ -604,9 +645,7 @@ def render_main(cursor: int = 0) -> tuple[list[MainItem], int]:
     return items, cursor
 
 
-def _render_paged_list(items: list[tuple[str, str]], offset: int, cursor: int,
-                       header: str, hint: str,
-                       show_provider: bool = False) -> tuple[int, int]:
+def _render_paged_list(items: list[tuple[str, str]], offset: int, cursor: int, header: str, hint: str, show_provider: bool = False) -> tuple[int, int]:
     clear_screen()
     page = _page_height()
     total = len(items)
@@ -637,7 +676,7 @@ def _render_paged_list(items: list[tuple[str, str]], offset: int, cursor: int,
     for i in range(offset, end):
         label, mid = items[i]
         n = i + 1
-        is_sel = (i == cursor)
+        is_sel = i == cursor
         if is_sel:
             marker = f"  {REVERSE} "
         else:
@@ -679,9 +718,7 @@ def render_provider(pname: str, offset: int = 0, cursor: int = 0, free_only: boo
 
 def render_search(query: str, offset: int = 0, cursor: int = 0, provider: str = "") -> tuple[list[str], int, int]:
     ql = query.lower()
-    results = [(m.provider, m.id) for m in MODELS
-               if (ql in m.id.lower() or ql in m.provider.lower())
-               and (not provider or m.provider == provider)]
+    results = [(m.provider, m.id) for m in MODELS if (ql in m.id.lower() or ql in m.provider.lower()) and (not provider or m.provider == provider)]
     if not results:
         clear_screen()
         print()
@@ -717,6 +754,7 @@ def render_free(offset: int = 0, cursor: int = 0) -> tuple[list[str], int, int]:
 
 
 # ─── Interactive Loop ────────────────────────────────────────────────
+
 
 def _handle_list_selection(key: str, items: list[str], extra_args: list[str]) -> None:
     if not items:

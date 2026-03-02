@@ -8,8 +8,11 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from .config import (
-    OPENWEBUI_URL, OPENWEBUI_KEY,
-    API_MODE_FILE, DETECT_CACHE, CONFIG_DIR,
+    API_MODE_FILE,
+    CONFIG_DIR,
+    DETECT_CACHE,
+    OPENWEBUI_KEY,
+    OPENWEBUI_URL,
 )
 from .util import read_response
 
@@ -24,15 +27,16 @@ AUTO_PREFER_FILE = CONFIG_DIR / "auto_prefer.conf"
 
 
 class Endpoint(NamedTuple):
-    base_url: str          # normalized, no trailing slash
-    mode: str              # "openai" or "anthropic"
-    chat_path: str         # e.g. "/v1/chat/completions"
-    models_path: str       # e.g. "/v1/models" or "/api/models"
-    source: str = ""       # "cli", "config", "auto-detect"
+    base_url: str  # normalized, no trailing slash
+    mode: str  # "openai" or "anthropic"
+    chat_path: str  # e.g. "/v1/chat/completions"
+    models_path: str  # e.g. "/v1/models" or "/api/models"
+    source: str = ""  # "cli", "config", "auto-detect"
     probe_match: str = ""  # which probe matched (for auto-detect)
 
 
 # ─── URL Normalization ────────────────────────────────────────────────
+
 
 def normalize_url(url: str) -> str:
     """Normalize a base URL: strip trailing slashes and whitespace."""
@@ -40,6 +44,7 @@ def normalize_url(url: str) -> str:
 
 
 # ─── Config Files ─────────────────────────────────────────────────────
+
 
 def load_api_mode(api_mode_file: Path | None = None) -> str:
     """Load API mode from config file. Returns 'auto' if not set."""
@@ -85,13 +90,14 @@ def save_auto_prefer(prefer: str, prefer_file: Path | None = None) -> None:
 
 # ─── Probing ──────────────────────────────────────────────────────────
 
+
 def _is_json_response(data: bytes) -> bool:
     """Check if data looks like JSON (not HTML or redirect page)."""
     stripped = data.lstrip()
     if not stripped:
         return False
     # JSON starts with { or [
-    return stripped[:1] in (b'{', b'[')
+    return stripped[:1] in (b"{", b"[")
 
 
 def _has_json_content_type(headers) -> bool:
@@ -125,8 +131,7 @@ def _probe_get(url: str, api_key: str, timeout: int = 5) -> dict | None:
         return None
 
 
-def _probe_post_reachable(url: str, api_key: str, payload: dict,
-                          timeout: int = 5) -> bool:
+def _probe_post_reachable(url: str, api_key: str, payload: dict, timeout: int = 5) -> bool:
     """Check if a POST endpoint is reachable (exists and speaks JSON).
 
     Returns True if:
@@ -214,11 +219,12 @@ def _extract_model_id(data: dict) -> str | None:
         if isinstance(item, dict):
             mid = item.get("id") or item.get("name")
             if mid and isinstance(mid, str):
-                return mid
+                return mid  # type: ignore[no-any-return]
     return None
 
 
 # ─── Detection Cache ─────────────────────────────────────────────────
+
 
 def _load_detect_cache(cache_file: Path | None = None) -> dict | None:
     """Load cached detection result if still valid."""
@@ -245,6 +251,7 @@ def _save_detect_cache(result: dict, cache_file: Path | None = None) -> None:
 
 
 # ─── Resolution ──────────────────────────────────────────────────────
+
 
 def _build_chat_probe_payload(model_id: str | None = None) -> dict:
     """Build a minimal chat probe payload using a real model ID if available."""
@@ -277,8 +284,7 @@ def _fetch_any_model_id(base_url: str, api_key: str) -> tuple[str | None, str]:
     return None, "/api/models"
 
 
-def _probe_openai_chat(base_url: str, api_key: str,
-                       model_id: str | None = None) -> str | None:
+def _probe_openai_chat(base_url: str, api_key: str, model_id: str | None = None) -> str | None:
     """Probe for an OpenAI-compatible chat endpoint.
 
     Uses a real model ID if available to avoid false negatives from
@@ -288,12 +294,10 @@ def _probe_openai_chat(base_url: str, api_key: str,
     """
     payload = _build_chat_probe_payload(model_id)
     # Prefer /v1/chat/completions
-    if _probe_post_reachable(f"{base_url}/v1/chat/completions", api_key,
-                             payload, timeout=5):
+    if _probe_post_reachable(f"{base_url}/v1/chat/completions", api_key, payload, timeout=5):
         return "/v1/chat/completions"
     # Fallback to /api/chat/completions (Open WebUI style)
-    if _probe_post_reachable(f"{base_url}/api/chat/completions", api_key,
-                             payload, timeout=5):
+    if _probe_post_reachable(f"{base_url}/api/chat/completions", api_key, payload, timeout=5):
         return "/api/chat/completions"
     return None
 
@@ -301,8 +305,10 @@ def _probe_openai_chat(base_url: str, api_key: str,
 def _probe_anthropic_chat(base_url: str, api_key: str) -> bool:
     """Check if the Anthropic Messages endpoint is reachable."""
     return _probe_post_reachable(
-        f"{base_url}/api/v1/messages", api_key,
-        _ANTHROPIC_PROBE_PAYLOAD, timeout=5,
+        f"{base_url}/api/v1/messages",
+        api_key,
+        _ANTHROPIC_PROBE_PAYLOAD,
+        timeout=5,
     )
 
 
@@ -317,8 +323,7 @@ def _detect_models_path(base_url: str, api_key: str) -> str:
     return "/api/models"  # fallback
 
 
-def _detect_endpoint(base_url: str, api_key: str,
-                     prefer: str = "openai") -> Endpoint:
+def _detect_endpoint(base_url: str, api_key: str, prefer: str = "openai") -> Endpoint:
     """Auto-detect API mode by probing endpoints.
 
     Strategy:
@@ -343,35 +348,33 @@ def _detect_endpoint(base_url: str, api_key: str,
         # Anthropic-first ordering
         if _probe_anthropic_chat(base_url, api_key):
             models = discovered_models_path if model_id else _detect_models_path(base_url, api_key)
-            return Endpoint(base_url, "anthropic", "/api/v1/messages", models,
-                            "auto-detect", "POST /api/v1/messages")
+            return Endpoint(base_url, "anthropic", "/api/v1/messages", models, "auto-detect", "POST /api/v1/messages")
 
     # ── OpenAI chat probes (with real model ID) ───────────────
     chat_path = _probe_openai_chat(base_url, api_key, model_id)
     if chat_path is not None:
         models = discovered_models_path if model_id else _detect_models_path(base_url, api_key)
-        return Endpoint(base_url, "openai", chat_path, models,
-                        "auto-detect", f"POST {chat_path} (model probe)")
+        return Endpoint(base_url, "openai", chat_path, models, "auto-detect", f"POST {chat_path} (model probe)")
 
     # ── Anthropic probe (if not already tried) ────────────────
     if prefer != "anthropic":
         if _probe_anthropic_chat(base_url, api_key):
             models = discovered_models_path if model_id else _detect_models_path(base_url, api_key)
-            return Endpoint(base_url, "anthropic", "/api/v1/messages", models,
-                            "auto-detect", "POST /api/v1/messages")
+            return Endpoint(base_url, "anthropic", "/api/v1/messages", models, "auto-detect", "POST /api/v1/messages")
 
     # ── Models-list fallback ──────────────────────────────────
     if model_id:
-        return Endpoint(base_url, "openai",
-                        "/v1/chat/completions" if "/v1/" in discovered_models_path
-                        else "/api/chat/completions",
-                        discovered_models_path,
-                        "auto-detect",
-                        f"GET {discovered_models_path} (models-list fallback)")
+        return Endpoint(
+            base_url,
+            "openai",
+            "/v1/chat/completions" if "/v1/" in discovered_models_path else "/api/chat/completions",
+            discovered_models_path,
+            "auto-detect",
+            f"GET {discovered_models_path} (models-list fallback)",
+        )
 
     # ── Nothing worked ────────────────────────────────────────
-    return Endpoint(base_url, "openai", "/api/chat/completions", "/api/models",
-                    "auto-detect", "none (fallback)")
+    return Endpoint(base_url, "openai", "/api/chat/completions", "/api/models", "auto-detect", "none (fallback)")
 
 
 def resolve_endpoint(
@@ -402,15 +405,12 @@ def resolve_endpoint(
         if not skip_cache:
             cached = _load_detect_cache(cache_file)
             if cached and cached.get("base_url") == url and cached.get("mode") == "openai":
-                return Endpoint(url, "openai", cached["chat_path"],
-                                cached["models_path"], src, cached.get("probe_match", ""))
+                return Endpoint(url, "openai", cached["chat_path"], cached["models_path"], src, cached.get("probe_match", ""))
         resp = _probe_get(f"{url}/v1/models", key)
         if resp is not None and _looks_like_models_list(resp):
-            ep = Endpoint(url, "openai", "/v1/chat/completions", "/v1/models",
-                          src, "GET /v1/models")
+            ep = Endpoint(url, "openai", "/v1/chat/completions", "/v1/models", src, "GET /v1/models")
         else:
-            ep = Endpoint(url, "openai", "/api/chat/completions", "/api/models",
-                          src, "fallback")
+            ep = Endpoint(url, "openai", "/api/chat/completions", "/api/models", src, "fallback")
         _save_detect_cache(ep._asdict(), cache_file)
         return ep
 
@@ -425,8 +425,10 @@ def resolve_endpoint(
         cached = _load_detect_cache(cache_file)
         if cached and cached.get("base_url") == url:
             return Endpoint(
-                cached["base_url"], cached["mode"],
-                cached["chat_path"], cached["models_path"],
+                cached["base_url"],
+                cached["mode"],
+                cached["chat_path"],
+                cached["models_path"],
                 cached.get("source", "auto-detect"),
                 cached.get("probe_match", ""),
             )
@@ -438,6 +440,7 @@ def resolve_endpoint(
 
 
 # ─── Display Helper ──────────────────────────────────────────────────
+
 
 def format_endpoint_info(ep: Endpoint) -> str:
     """Format endpoint info for --print-endpoints."""

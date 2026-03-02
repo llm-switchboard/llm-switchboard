@@ -6,6 +6,7 @@ import time
 from pathlib import Path
 
 from .config import CONFIG_DIR
+from .util import locked_file
 from .webui import api_post, build_anthropic_payload, parse_anthropic_response
 
 COMPAT_FILE = CONFIG_DIR / "compat.json"
@@ -136,14 +137,13 @@ _TOOL_ERROR_MESSAGES = [
     {
         "role": "tool",
         "tool_call_id": "call_err_1",
-        "content": json.dumps({
-            "error": "FileNotFoundError: [Errno 2] No such file or directory: '/tmp/settings.json'"
-        }),
+        "content": json.dumps({"error": "FileNotFoundError: [Errno 2] No such file or directory: '/tmp/settings.json'"}),
     },
 ]
 
 
 # ─── Text Validators ────────────────────────────────────────────────
+
 
 def _validate_format(text: str) -> bool:
     """Check that the response contains a unified diff."""
@@ -154,8 +154,8 @@ def _validate_format(text: str) -> bool:
             return True
     # Fallback: accept bare diff lines
     lines = t.splitlines()
-    has_minus = any(l.startswith("-") for l in lines)
-    has_plus = any(l.startswith("+") for l in lines)
+    has_minus = any(ln.startswith("-") for ln in lines)
+    has_plus = any(ln.startswith("+") for ln in lines)
     return has_minus and has_plus
 
 
@@ -202,6 +202,7 @@ def _validate_no_hallucination(text: str) -> bool:
 
 
 # ─── Tool-Call Validators (work for both OpenAI and normalized Anthropic) ───
+
 
 def _parse_tool_calls(message: dict) -> list[dict]:
     """Extract normalized tool calls from an OpenAI-format message.
@@ -288,11 +289,7 @@ def _validate_tool_call_chaining(message: dict) -> bool:
     calls = _get_tool_calls_any(message)
     if not calls:
         return False
-    has_read = any(
-        c["name"] == "read_file" and "path" in c["arguments"]
-        and "config" in c["arguments"]["path"].lower()
-        for c in calls
-    )
+    has_read = any(c["name"] == "read_file" and "path" in c["arguments"] and "config" in c["arguments"]["path"].lower() for c in calls)
     if has_read:
         return True
     # Accept if there's at least one valid tool call (model may combine steps)
@@ -394,9 +391,7 @@ def compute_agent_status(tests: dict) -> str:
     tool_schema_passed = tests.get("tool_call_schema", {}).get("passed", False)
     if not tool_schema_passed:
         return "fail"
-    required_all_pass = all(
-        tests.get(t, {}).get("passed", False) for t in REQUIRED_TESTS
-    )
+    required_all_pass = all(tests.get(t, {}).get("passed", False) for t in REQUIRED_TESTS)
     pass_count = sum(1 for r in tests.values() if r.get("passed"))
     if required_all_pass and pass_count >= MIN_PASS_TOTAL:
         return "pass"
@@ -432,9 +427,7 @@ def save_compat(data: dict, compat_file: Path | None = None) -> None:
 # ─── Runner ──────────────────────────────────────────────────────────
 
 
-def _run_one_test(model_id: str, test_name: str, test_def: dict,
-                  mode: str = "openai", chat_path: str = "/api/chat/completions",
-                  base_url: str | None = None, api_key: str | None = None) -> dict:
+def _run_one_test(model_id: str, test_name: str, test_def: dict, mode: str = "openai", chat_path: str = "/api/chat/completions", base_url: str | None = None, api_key: str | None = None) -> dict:
     """Run a single compat test. Returns result dict with passed, latency_ms, etc.
 
     Args:
@@ -443,13 +436,13 @@ def _run_one_test(model_id: str, test_name: str, test_def: dict,
         base_url: override base URL
         api_key: override API key
     """
-    messages = test_def.get("messages") or [
-        {"role": "user", "content": test_def["prompt"]}
-    ]
+    messages = test_def.get("messages") or [{"role": "user", "content": test_def["prompt"]}]
 
     if mode == "anthropic":
         payload = build_anthropic_payload(
-            model_id, messages, max_tokens=1024,
+            model_id,
+            messages,
+            max_tokens=1024,
             tools=TOOL_SCHEMAS if test_def.get("uses_tools") else None,
         )
     else:
@@ -464,8 +457,7 @@ def _run_one_test(model_id: str, test_name: str, test_def: dict,
             payload["tools"] = TOOL_SCHEMAS
 
     start = time.monotonic()
-    resp = api_post(chat_path, payload, timeout=60,
-                    base_url=base_url, api_key=api_key)
+    resp = api_post(chat_path, payload, timeout=60, base_url=base_url, api_key=api_key)
     elapsed_ms = int((time.monotonic() - start) * 1000)
 
     if "_error" in resp:
@@ -504,16 +496,18 @@ def _run_one_test(model_id: str, test_name: str, test_def: dict,
     }
 
 
-def run_compat_test(model_id: str, compat_file: Path | None = None,
-                    mode: str = "openai", chat_path: str = "/api/chat/completions",
-                    base_url: str | None = None, api_key: str | None = None) -> dict:
+def run_compat_test(model_id: str, compat_file: Path | None = None, mode: str = "openai", chat_path: str = "/api/chat/completions", base_url: str | None = None, api_key: str | None = None) -> dict:
     """Run all compat tests on a model. Returns per-test results dict."""
     results = {}
     for test_name, test_def in TESTS.items():
         results[test_name] = _run_one_test(
-            model_id, test_name, test_def,
-            mode=mode, chat_path=chat_path,
-            base_url=base_url, api_key=api_key,
+            model_id,
+            test_name,
+            test_def,
+            mode=mode,
+            chat_path=chat_path,
+            base_url=base_url,
+            api_key=api_key,
         )
 
     # Compute summary
@@ -531,10 +525,12 @@ def run_compat_test(model_id: str, compat_file: Path | None = None,
         "latency_ms": total_latency,
     }
 
-    # Persist
-    data = load_compat(compat_file)
-    data["results"][model_id] = entry
-    save_compat(data, compat_file)
+    # Persist (locked to prevent concurrent test runs from clobbering each other)
+    f = compat_file or COMPAT_FILE
+    with locked_file(f):
+        data = load_compat(f)
+        data["results"][model_id] = entry
+        save_compat(data, f)
 
     return entry
 
@@ -548,13 +544,10 @@ def get_compat_status(model_id: str, compat_file: Path | None = None) -> str | N
     entry = data.get("results", {}).get(model_id)
     if entry is None:
         return None
-    return entry.get("last_status")
+    return entry.get("last_status")  # type: ignore[no-any-return]
 
 
 def get_agent_ok_models(compat_file: Path | None = None) -> set[str]:
     """Return set of model IDs with status "pass"."""
     data = load_compat(compat_file)
-    return {
-        mid for mid, entry in data.get("results", {}).items()
-        if entry.get("last_status") == "pass"
-    }
+    return {mid for mid, entry in data.get("results", {}).items() if entry.get("last_status") == "pass"}

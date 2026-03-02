@@ -4,14 +4,13 @@ import json
 from urllib.error import URLError
 from urllib.request import Request, urlopen
 
-from .config import OPENWEBUI_URL, OPENWEBUI_KEY
+from .config import OPENWEBUI_KEY, OPENWEBUI_URL
 from .util import read_response
-
 
 # ─── Core HTTP ────────────────────────────────────────────────────────
 
-def api_get(path: str, timeout: int = 10,
-            base_url: str | None = None, api_key: str | None = None) -> dict:
+
+def api_get(path: str, timeout: int = 10, base_url: str | None = None, api_key: str | None = None) -> dict:
     url = f"{base_url or OPENWEBUI_URL}{path}"
     key = api_key if api_key is not None else OPENWEBUI_KEY
     headers = {}
@@ -20,13 +19,12 @@ def api_get(path: str, timeout: int = 10,
     req = Request(url, headers=headers)
     try:
         with urlopen(req, timeout=timeout) as resp:
-            return json.loads(read_response(resp))
-    except (URLError, TimeoutError, OSError) as e:
+            return json.loads(read_response(resp))  # type: ignore[no-any-return]
+    except (URLError, TimeoutError, OSError, json.JSONDecodeError, RuntimeError) as e:
         return {"_error": str(e)}
 
 
-def api_post(path: str, data: dict, timeout: int = 10,
-             base_url: str | None = None, api_key: str | None = None) -> dict:
+def api_post(path: str, data: dict, timeout: int = 10, base_url: str | None = None, api_key: str | None = None) -> dict:
     url = f"{base_url or OPENWEBUI_URL}{path}"
     key = api_key if api_key is not None else OPENWEBUI_KEY
     body = json.dumps(data).encode()
@@ -36,16 +34,15 @@ def api_post(path: str, data: dict, timeout: int = 10,
     req = Request(url, data=body, headers=headers)
     try:
         with urlopen(req, timeout=timeout) as resp:
-            return json.loads(read_response(resp))
-    except (URLError, TimeoutError, OSError) as e:
+            return json.loads(read_response(resp))  # type: ignore[no-any-return]
+    except (URLError, TimeoutError, OSError, json.JSONDecodeError, RuntimeError) as e:
         return {"_error": str(e)}
 
 
 # ─── Anthropic Request/Response Helpers ──────────────────────────────
 
-def build_anthropic_payload(model: str, messages: list[dict],
-                            max_tokens: int = 1024,
-                            tools: list[dict] | None = None) -> dict:
+
+def build_anthropic_payload(model: str, messages: list[dict], max_tokens: int = 1024, tools: list[dict] | None = None) -> dict:
     """Build an Anthropic Messages API request payload from OpenAI-style messages.
 
     Converts OpenAI message format to Anthropic format:
@@ -82,25 +79,31 @@ def build_anthropic_payload(model: str, messages: list[dict],
                             args = {}
                     else:
                         args = raw_args if isinstance(raw_args, dict) else {}
-                    blocks.append({
-                        "type": "tool_use",
-                        "id": tc.get("id", ""),
-                        "name": fn.get("name", ""),
-                        "input": args,
-                    })
+                    blocks.append(
+                        {
+                            "type": "tool_use",
+                            "id": tc.get("id", ""),
+                            "name": fn.get("name", ""),
+                            "input": args,
+                        }
+                    )
                 anthropic_msgs.append({"role": "assistant", "content": blocks})
             elif content is not None:
                 anthropic_msgs.append({"role": "assistant", "content": content})
         elif role == "tool":
             # Convert to tool_result
-            anthropic_msgs.append({
-                "role": "user",
-                "content": [{
-                    "type": "tool_result",
-                    "tool_use_id": msg.get("tool_call_id", ""),
-                    "content": msg.get("content", ""),
-                }],
-            })
+            anthropic_msgs.append(
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": msg.get("tool_call_id", ""),
+                            "content": msg.get("content", ""),
+                        }
+                    ],
+                }
+            )
 
     payload: dict = {
         "model": model,
@@ -115,11 +118,13 @@ def build_anthropic_payload(model: str, messages: list[dict],
         anthropic_tools = []
         for tool in tools:
             fn = tool.get("function", {})
-            anthropic_tools.append({
-                "name": fn.get("name", ""),
-                "description": fn.get("description", ""),
-                "input_schema": fn.get("parameters", {"type": "object", "properties": {}}),
-            })
+            anthropic_tools.append(
+                {
+                    "name": fn.get("name", ""),
+                    "description": fn.get("description", ""),
+                    "input_schema": fn.get("parameters", {"type": "object", "properties": {}}),
+                }
+            )
         payload["tools"] = anthropic_tools
 
     return payload
@@ -141,14 +146,16 @@ def parse_anthropic_response(resp: dict) -> dict:
         if btype == "text":
             text_parts.append(block.get("text", ""))
         elif btype == "tool_use":
-            tool_calls.append({
-                "id": block.get("id", ""),
-                "type": "function",
-                "function": {
-                    "name": block.get("name", ""),
-                    "arguments": json.dumps(block.get("input", {})),
-                },
-            })
+            tool_calls.append(
+                {
+                    "id": block.get("id", ""),
+                    "type": "function",
+                    "function": {
+                        "name": block.get("name", ""),
+                        "arguments": json.dumps(block.get("input", {})),
+                    },
+                }
+            )
 
     message: dict = {
         "role": resp.get("role", "assistant"),

@@ -2,11 +2,10 @@
 
 import unittest
 
-from llm_switchboard.util import sanitize_display, fmt_price, fmt_tokens, visible_len
+from llm_switchboard.util import fmt_price, fmt_tokens, sanitize_display, visible_len
 
 
 class TestSanitizeDisplay(unittest.TestCase):
-
     def test_strips_ansi(self):
         self.assertEqual(sanitize_display("\033[31mhello\033[0m"), "hello")
 
@@ -27,7 +26,6 @@ class TestSanitizeDisplay(unittest.TestCase):
 
 
 class TestFmtPrice(unittest.TestCase):
-
     def test_zero(self):
         self.assertEqual(fmt_price(0), "$0")
 
@@ -51,7 +49,6 @@ class TestFmtPrice(unittest.TestCase):
 
 
 class TestFmtTokens(unittest.TestCase):
-
     def test_small(self):
         self.assertEqual(fmt_tokens(473), "473")
 
@@ -78,7 +75,6 @@ class TestFmtTokens(unittest.TestCase):
 
 
 class TestVisibleLen(unittest.TestCase):
-
     def test_plain(self):
         self.assertEqual(visible_len("hello"), 5)
 

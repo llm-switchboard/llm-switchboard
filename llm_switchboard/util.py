@@ -1,26 +1,28 @@
 """Utility functions — pure logic, no side effects."""
 
+import contextlib
+import fcntl
 import os
 import re
 import sys
+from pathlib import Path
+from typing import NoReturn
 
-_ANSI_RE = re.compile(r'\x1b\[[0-9;]*[a-zA-Z]')
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
 
 MAX_RESPONSE_SIZE = 10 * 1024 * 1024  # 10 MB cap for HTTP responses
 
-PRIVATE_IP_RE = re.compile(
-    r"://(localhost|127\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.)"
-)
+PRIVATE_IP_RE = re.compile(r"://(localhost|127\.|0\.0\.0\.0|10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.|\[::1\])")
 
 
 def sanitize_display(s: str) -> str:
     """Strip ANSI escape sequences and control characters from untrusted strings."""
-    return _ANSI_RE.sub('', s).replace('\r', '').replace('\x00', '')
+    return _ANSI_RE.sub("", s).replace("\r", "").replace("\x00", "")
 
 
 def visible_len(s: str) -> int:
     """Length of string after stripping ANSI escape sequences."""
-    return len(_ANSI_RE.sub('', s))
+    return len(_ANSI_RE.sub("", s))
 
 
 def read_response(resp, max_size: int = MAX_RESPONSE_SIZE) -> bytes:
@@ -28,7 +30,7 @@ def read_response(resp, max_size: int = MAX_RESPONSE_SIZE) -> bytes:
     data = resp.read(max_size + 1)
     if len(data) > max_size:
         raise RuntimeError(f"Response too large (>{max_size // 1024 // 1024} MB)")
-    return data
+    return data  # type: ignore[no-any-return]
 
 
 def fmt_price(v: float) -> str:
@@ -78,6 +80,27 @@ RESET = _c("\033[0m")
 REVERSE = _c("\033[7m")
 
 
-def die(msg: str) -> None:
+def die(msg: str) -> NoReturn:
     print(f"{RED}Error:{RESET} {msg}", file=sys.stderr)
     sys.exit(1)
+
+
+# ─── File Locking ────────────────────────────────────────────────────
+
+
+@contextlib.contextmanager
+def locked_file(filepath: Path):
+    """Context manager that holds an exclusive lock on filepath.lock.
+
+    Use around read-modify-write cycles to prevent concurrent updates
+    from clobbering each other.
+    """
+    lockpath = filepath.with_suffix(filepath.suffix + ".lock")
+    lockpath.parent.mkdir(parents=True, exist_ok=True)
+    fp = open(lockpath, "w")
+    try:
+        fcntl.flock(fp, fcntl.LOCK_EX)
+        yield
+    finally:
+        fcntl.flock(fp, fcntl.LOCK_UN)
+        fp.close()

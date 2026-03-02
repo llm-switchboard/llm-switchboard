@@ -38,13 +38,19 @@ OPENWEBUI_KEY = os.environ.get("OPENWEBUI_API_KEY", "")
 
 
 def ensure_dirs() -> None:
-    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    try:
+        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    except (PermissionError, OSError) as e:
+        from .util import die
+
+        die(f"Cannot create config/cache directories: {e}")
     if not FAV_FILE.exists():
         FAV_FILE.touch()
 
 
 # ─── Favorites ────────────────────────────────────────────────────────
+
 
 def fav_list(fav_file: Path | None = None) -> list[str]:
     f = fav_file or FAV_FILE
@@ -80,6 +86,7 @@ def fav_rm(model_id: str, fav_file: Path | None = None) -> str:
 
 
 # ─── Last Model ───────────────────────────────────────────────────────
+
 
 def last_model_read(last_file: Path | None = None) -> str:
     f = last_file or LAST_FILE

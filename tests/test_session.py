@@ -1,15 +1,13 @@
 """Tests for session module — usage tracking."""
 
-import json
 import tempfile
 import unittest
 from pathlib import Path
 
-from llm_switchboard.session import load_local_usage, save_local_usage, record_session, get_all_usage
+from llm_switchboard.session import get_all_usage, load_local_usage, record_session, save_local_usage
 
 
 class TestUsageTracking(unittest.TestCase):
-
     def setUp(self):
         self.tmpdir = tempfile.mkdtemp()
         self.usage_file = Path(self.tmpdir) / "usage.json"

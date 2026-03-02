@@ -46,8 +46,8 @@ class Model(NamedTuple):
     id: str
     cost: str  # "free", "local", "paid", "cloud"
     description: str = ""
-    ctx_k: str = ""      # e.g. "128K", "1M"
-    price: str = ""      # e.g. "$3/$15"
+    ctx_k: str = ""  # e.g. "128K", "1M"
+    price: str = ""  # e.g. "$3/$15"
 
 
 def provider_from_url(url: str) -> str:

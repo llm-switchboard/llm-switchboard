@@ -1,21 +1,29 @@
 """Tests for llm_switchboard.endpoint — URL normalization, detection, caching."""
 
-import json
 import tempfile
 import time
 import unittest
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 from llm_switchboard.endpoint import (
-    normalize_url, load_api_mode, save_api_mode,
-    load_auto_prefer, save_auto_prefer,
-    resolve_endpoint, Endpoint, DETECT_TTL,
-    _looks_like_models_list, _load_detect_cache, _save_detect_cache,
-    _detect_endpoint, _is_json_response, _has_json_content_type,
-    _extract_model_id, _build_chat_probe_payload,
+    DETECT_TTL,
+    Endpoint,
+    _build_chat_probe_payload,
+    _detect_endpoint,
+    _extract_model_id,
+    _has_json_content_type,
+    _is_json_response,
+    _load_detect_cache,
+    _looks_like_models_list,
+    _save_detect_cache,
     format_endpoint_info,
-    VALID_MODES, VALID_PREFERENCES,
+    load_api_mode,
+    load_auto_prefer,
+    normalize_url,
+    resolve_endpoint,
+    save_api_mode,
+    save_auto_prefer,
 )
 
 
@@ -41,22 +49,22 @@ class TestIsJsonResponse(unittest.TestCase):
         self.assertTrue(_is_json_response(b'{"key": "value"}'))
 
     def test_json_array(self):
-        self.assertTrue(_is_json_response(b'[1, 2, 3]'))
+        self.assertTrue(_is_json_response(b"[1, 2, 3]"))
 
     def test_json_with_whitespace(self):
         self.assertTrue(_is_json_response(b'  \n{"key": "value"}'))
 
     def test_html_rejected(self):
-        self.assertFalse(_is_json_response(b'<!DOCTYPE html><html>'))
+        self.assertFalse(_is_json_response(b"<!DOCTYPE html><html>"))
 
     def test_html_tag_rejected(self):
-        self.assertFalse(_is_json_response(b'<html><body>Not found</body></html>'))
+        self.assertFalse(_is_json_response(b"<html><body>Not found</body></html>"))
 
     def test_empty_rejected(self):
-        self.assertFalse(_is_json_response(b''))
+        self.assertFalse(_is_json_response(b""))
 
     def test_plain_text_rejected(self):
-        self.assertFalse(_is_json_response(b'Not Found'))
+        self.assertFalse(_is_json_response(b"Not Found"))
 
     def test_redirect_html_rejected(self):
         self.assertFalse(_is_json_response(b'<head><meta http-equiv="refresh"'))
@@ -192,17 +200,16 @@ class TestDetectCache(unittest.TestCase):
         self.assertIsNone(_load_detect_cache(self.cache_file))
 
     def test_save_and_load(self):
-        result = {"base_url": "http://localhost:3100", "mode": "openai",
-                  "chat_path": "/api/chat/completions", "models_path": "/api/models"}
+        result = {"base_url": "http://localhost:3100", "mode": "openai", "chat_path": "/api/chat/completions", "models_path": "/api/models"}
         _save_detect_cache(result, self.cache_file)
         loaded = _load_detect_cache(self.cache_file)
         self.assertEqual(loaded, result)
 
     def test_expired_cache(self):
-        result = {"base_url": "http://localhost:3100", "mode": "openai",
-                  "chat_path": "/api/chat/completions", "models_path": "/api/models"}
+        result = {"base_url": "http://localhost:3100", "mode": "openai", "chat_path": "/api/chat/completions", "models_path": "/api/models"}
         _save_detect_cache(result, self.cache_file)
         import os
+
         old_time = time.time() - DETECT_TTL - 10
         os.utime(self.cache_file, (old_time, old_time))
         self.assertIsNone(_load_detect_cache(self.cache_file))
@@ -216,9 +223,14 @@ class TestDetectCache(unittest.TestCase):
         self.assertIsNone(_load_detect_cache(self.cache_file))
 
     def test_cache_preserves_source_and_probe(self):
-        result = {"base_url": "http://host", "mode": "openai",
-                  "chat_path": "/api/chat/completions", "models_path": "/api/models",
-                  "source": "auto-detect", "probe_match": "POST /api/chat/completions (model probe)"}
+        result = {
+            "base_url": "http://host",
+            "mode": "openai",
+            "chat_path": "/api/chat/completions",
+            "models_path": "/api/models",
+            "source": "auto-detect",
+            "probe_match": "POST /api/chat/completions (model probe)",
+        }
         _save_detect_cache(result, self.cache_file)
         loaded = _load_detect_cache(self.cache_file)
         self.assertEqual(loaded["source"], "auto-detect")
@@ -227,14 +239,14 @@ class TestDetectCache(unittest.TestCase):
 
 # ─── Helpers for probe mocking ────────────────────────────────────────
 
-def _make_probe_mocks(v1_models=None, api_models=None,
-                      v1_chat_reachable=False, api_chat_reachable=False,
-                      anthropic_reachable=False):
+
+def _make_probe_mocks(v1_models=None, api_models=None, v1_chat_reachable=False, api_chat_reachable=False, anthropic_reachable=False):
     """Return (get_fn, post_reachable_fn) for probe mocking.
 
     get_fn:             returns dict or None for GET probes
     post_reachable_fn:  returns bool for POST reachability probes
     """
+
     def get_fn(url, key, **kw):
         if "/v1/models" in url:
             return v1_models
@@ -443,19 +455,19 @@ class TestDetectEndpoint(unittest.TestCase):
         mock_get.side_effect = get_fn
 
         captured_payloads = []
+
         def capture_post(url, key, payload, **kw):
             captured_payloads.append(payload)
             if "/api/chat/completions" in url:
                 return True
             return False
+
         mock_post.side_effect = capture_post
 
-        ep = _detect_endpoint("http://host", "key")
+        _detect_endpoint("http://host", "key")
         # Check that probe used the real model ID
-        chat_payloads = [p for p in captured_payloads
-                         if p.get("model") != "__probe__"]
-        self.assertTrue(any(p["model"] == "groq/llama-3.3-70b"
-                            for p in chat_payloads))
+        chat_payloads = [p for p in captured_payloads if p.get("model") != "__probe__"]
+        self.assertTrue(any(p["model"] == "groq/llama-3.3-70b" for p in chat_payloads))
 
 
 class TestResolveEndpoint(unittest.TestCase):
@@ -467,42 +479,40 @@ class TestResolveEndpoint(unittest.TestCase):
 
     @patch("llm_switchboard.endpoint._probe_get")
     def test_openai_mode_v1(self, mock_get):
-        mock_get.side_effect = lambda url, key, **kw: (
-            {"data": []} if "/v1/models" in url else None
-        )
-        ep = resolve_endpoint(mode="openai", base_url="http://host",
-                              cache_file=self.cache_file, skip_cache=True)
+        mock_get.side_effect = lambda url, key, **kw: {"data": []} if "/v1/models" in url else None
+        ep = resolve_endpoint(mode="openai", base_url="http://host", cache_file=self.cache_file, skip_cache=True)
         self.assertEqual(ep.mode, "openai")
         self.assertEqual(ep.chat_path, "/v1/chat/completions")
 
     @patch("llm_switchboard.endpoint._probe_get")
     def test_openai_mode_fallback(self, mock_get):
         mock_get.return_value = None
-        ep = resolve_endpoint(mode="openai", base_url="http://host",
-                              cache_file=self.cache_file, skip_cache=True)
+        ep = resolve_endpoint(mode="openai", base_url="http://host", cache_file=self.cache_file, skip_cache=True)
         self.assertEqual(ep.mode, "openai")
         self.assertEqual(ep.chat_path, "/api/chat/completions")
 
     def test_anthropic_mode(self):
-        ep = resolve_endpoint(mode="anthropic", base_url="http://host",
-                              cache_file=self.cache_file)
+        ep = resolve_endpoint(mode="anthropic", base_url="http://host", cache_file=self.cache_file)
         self.assertEqual(ep.mode, "anthropic")
         self.assertEqual(ep.chat_path, "/api/v1/messages")
 
     def test_anthropic_mode_source(self):
-        ep = resolve_endpoint(mode="anthropic", base_url="http://host",
-                              cache_file=self.cache_file, source="cli")
+        ep = resolve_endpoint(mode="anthropic", base_url="http://host", cache_file=self.cache_file, source="cli")
         self.assertEqual(ep.source, "cli")
 
     @patch("llm_switchboard.endpoint._detect_endpoint")
     def test_auto_mode_cached(self, mock_detect):
         """Cached result is used in auto mode."""
-        cached = {"base_url": "http://host", "mode": "openai",
-                  "chat_path": "/v1/chat/completions", "models_path": "/v1/models",
-                  "source": "auto-detect", "probe_match": "POST /v1/chat/completions (model probe)"}
+        cached = {
+            "base_url": "http://host",
+            "mode": "openai",
+            "chat_path": "/v1/chat/completions",
+            "models_path": "/v1/models",
+            "source": "auto-detect",
+            "probe_match": "POST /v1/chat/completions (model probe)",
+        }
         _save_detect_cache(cached, self.cache_file)
-        ep = resolve_endpoint(mode="auto", base_url="http://host",
-                              cache_file=self.cache_file)
+        ep = resolve_endpoint(mode="auto", base_url="http://host", cache_file=self.cache_file)
         self.assertEqual(ep.mode, "openai")
         self.assertEqual(ep.chat_path, "/v1/chat/completions")
         self.assertEqual(ep.source, "auto-detect")
@@ -511,39 +521,31 @@ class TestResolveEndpoint(unittest.TestCase):
     @patch("llm_switchboard.endpoint._detect_endpoint")
     def test_auto_mode_stale_cache(self, mock_detect):
         """Stale cache triggers re-detection."""
-        cached = {"base_url": "http://host", "mode": "openai",
-                  "chat_path": "/api/chat/completions", "models_path": "/api/models"}
+        cached = {"base_url": "http://host", "mode": "openai", "chat_path": "/api/chat/completions", "models_path": "/api/models"}
         _save_detect_cache(cached, self.cache_file)
         import os
+
         old_time = time.time() - DETECT_TTL - 10
         os.utime(self.cache_file, (old_time, old_time))
-        mock_detect.return_value = Endpoint("http://host", "openai",
-                                            "/v1/chat/completions", "/v1/models",
-                                            "auto-detect", "POST /v1/chat/completions (model probe)")
-        ep = resolve_endpoint(mode="auto", base_url="http://host",
-                              cache_file=self.cache_file)
+        mock_detect.return_value = Endpoint("http://host", "openai", "/v1/chat/completions", "/v1/models", "auto-detect", "POST /v1/chat/completions (model probe)")
+        ep = resolve_endpoint(mode="auto", base_url="http://host", cache_file=self.cache_file)
         mock_detect.assert_called_once()
         self.assertEqual(ep.chat_path, "/v1/chat/completions")
 
     @patch("llm_switchboard.endpoint._detect_endpoint")
     def test_auto_mode_different_url_ignores_cache(self, mock_detect):
         """Cache for different URL is not used."""
-        cached = {"base_url": "http://other-host", "mode": "openai",
-                  "chat_path": "/api/chat/completions", "models_path": "/api/models"}
+        cached = {"base_url": "http://other-host", "mode": "openai", "chat_path": "/api/chat/completions", "models_path": "/api/models"}
         _save_detect_cache(cached, self.cache_file)
-        mock_detect.return_value = Endpoint("http://host", "anthropic",
-                                            "/api/v1/messages", "/api/models",
-                                            "auto-detect", "POST /api/v1/messages")
-        ep = resolve_endpoint(mode="auto", base_url="http://host",
-                              cache_file=self.cache_file)
+        mock_detect.return_value = Endpoint("http://host", "anthropic", "/api/v1/messages", "/api/models", "auto-detect", "POST /api/v1/messages")
+        ep = resolve_endpoint(mode="auto", base_url="http://host", cache_file=self.cache_file)
         mock_detect.assert_called_once()
         self.assertEqual(ep.mode, "anthropic")
 
 
 class TestFormatEndpointInfo(unittest.TestCase):
     def test_format_basic(self):
-        ep = Endpoint("http://localhost:3100", "openai",
-                      "/api/chat/completions", "/api/models")
+        ep = Endpoint("http://localhost:3100", "openai", "/api/chat/completions", "/api/models")
         info = format_endpoint_info(ep)
         self.assertIn("http://localhost:3100", info)
         self.assertIn("openai", info)
@@ -551,8 +553,7 @@ class TestFormatEndpointInfo(unittest.TestCase):
         self.assertIn("/api/models", info)
 
     def test_format_with_source_and_probe(self):
-        ep = Endpoint("http://host", "openai", "/api/chat/completions",
-                      "/api/models", "auto-detect", "POST /api/chat/completions (model probe)")
+        ep = Endpoint("http://host", "openai", "/api/chat/completions", "/api/models", "auto-detect", "POST /api/chat/completions (model probe)")
         info = format_endpoint_info(ep)
         self.assertIn("Mode source:", info)
         self.assertIn("auto-detect", info)

@@ -7,8 +7,7 @@ from pathlib import Path
 CACHE_MAX_AGE = 3600  # 1 hour
 
 
-def fetch_cached(api_get_fn, path: str, cache_file: Path,
-                 validate_key: str, max_age: int = CACHE_MAX_AGE) -> dict:
+def fetch_cached(api_get_fn, path: str, cache_file: Path, validate_key: str, max_age: int = CACHE_MAX_AGE) -> dict:
     """Fetch data from API with file-based caching.
 
     Args:
@@ -22,11 +21,13 @@ def fetch_cached(api_get_fn, path: str, cache_file: Path,
         age = time.time() - cache_file.stat().st_mtime
         if age < max_age:
             try:
-                return json.loads(cache_file.read_text())
+                data = json.loads(cache_file.read_text())
+                if isinstance(data, dict):
+                    return data
             except (json.JSONDecodeError, OSError):
                 pass
     data = api_get_fn(path, 10)
     if validate_key in data:
         cache_file.parent.mkdir(parents=True, exist_ok=True)
         cache_file.write_text(json.dumps(data))
-    return data
+    return data  # type: ignore[no-any-return]

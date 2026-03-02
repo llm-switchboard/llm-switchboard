@@ -66,7 +66,6 @@ llm-switchboard --api-mode auto                 # Auto-detect (default)
 llm-switchboard --api-mode openai               # Force OpenAI-compatible endpoints
 llm-switchboard --api-mode anthropic            # Force Anthropic Messages endpoint
 llm-switchboard --base-url http://other:8080    # Override base URL
-llm-switchboard --print-endpoints               # Show resolved endpoints
 ```
 
 | Mode | Chat Endpoint | When to Use |
@@ -95,16 +94,31 @@ llm-switchboard --free-tier update         # Refresh Gemini pricing cache
 llm-switchboard --setup                    # Interactive setup wizard
 llm-switchboard --stats                    # Usage statistics
 llm-switchboard --reset                    # Clear usage data
-llm-switchboard --print-paths              # Show config/cache dirs
-llm-switchboard --print-endpoints          # Show resolved API endpoints
+```
+
+### Agent Compatibility Testing
+```
+llm-switchboard --compat-test <model-id>   # Test a model as coding agent
+llm-switchboard --compat-test --all        # Test all models
+llm-switchboard --compat-report            # Show test results
+llm-switchboard --compat-report --json     # JSON output
+```
+
+### Diagnostics
+```
+llm-switchboard --doctor                   # Health check & connectivity test
+llm-switchboard --clear-detect-cache       # Clear endpoint detection cache
+llm-switchboard --version                  # Show version
 ```
 
 ### Development
 ```
-llm-switchboard --self-test        # Run internal test suite
-llm-switchboard --version          # Show version
+make ci                            # Run everything (test + lint + typecheck)
+make test                          # pytest
 make check                         # Compile check
-make test                          # Run tests
+make lint                          # Ruff linter
+make typecheck                     # mypy
+make fmt                           # Auto-format with ruff
 ```
 
 ## Config & Cache Paths
@@ -141,16 +155,19 @@ llm-switchboard/
 │   ├── tui.py             # Terminal UI (raw input, rendering, interactive loop)
 │   ├── webui.py           # API client (OpenAI + Anthropic)
 │   ├── endpoint.py        # Endpoint resolution and auto-detection
+│   ├── compat.py          # Agent compatibility testing
 │   ├── models.py          # Model data structures, provider detection
 │   ├── config.py          # Favorites, last model, directory management
 │   ├── cache.py           # File-based API response caching
 │   ├── free_tier.py       # Free-tier rules, Gemini pricing
 │   ├── session.py         # Session watching, usage tracking
-│   └── util.py            # Pure utilities (formatting, colors, sanitization)
-├── tests/                 # Unit tests (stdlib unittest)
+│   ├── util.py            # Utilities (formatting, colors, file locking)
+│   └── py.typed           # PEP 561 type annotation marker
+├── tests/                 # Unit tests (pytest)
 ├── docs/
 │   ├── ARCHITECTURE.md
 │   └── DECISIONS.md
+├── pyproject.toml         # PEP 517/518 packaging + tool config
 ├── CHANGELOG.md
 ├── Makefile
 └── README.md

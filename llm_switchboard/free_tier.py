@@ -2,7 +2,7 @@
 
 import json
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from urllib.error import URLError
 from urllib.request import Request, urlopen
@@ -20,6 +20,7 @@ _GEMINI_ALWAYS_FREE_PREFIXES = ("gemma-",)
 
 class FreeTierRule:
     """A provider free-tier rule: include patterns, exclude patterns, or all."""
+
     __slots__ = ("provider", "includes", "excludes")
 
     def __init__(self, provider: str, includes: list[str] | None, excludes: list[str]):
@@ -95,10 +96,10 @@ def load_gemini_cache(cache_file: Path) -> dict | None:
         if not fetched:
             return None
         ts = datetime.fromisoformat(fetched)
-        age = (datetime.now(timezone.utc) - ts).total_seconds()
+        age = (datetime.now(UTC) - ts).total_seconds()
         if age > GEMINI_CACHE_MAX_AGE:
             return None
-        return data
+        return data  # type: ignore[no-any-return]
     except (json.JSONDecodeError, OSError, ValueError):
         return None
 
@@ -123,30 +124,30 @@ def fetch_gemini_free_tier() -> tuple[set[str], set[str]]:
     free_set: set[str] = set()
     paid_set: set[str] = set()
 
-    sections = re.split(r'^## ', text, flags=re.MULTILINE)
+    sections = re.split(r"^## ", text, flags=re.MULTILINE)
 
     for section in sections:
-        header_lines = '\n'.join(section.split('\n')[:5])
-        model_ids = re.findall(r'`([^`]+)`', header_lines)
+        header_lines = "\n".join(section.split("\n")[:5])
+        model_ids = re.findall(r"`([^`]+)`", header_lines)
         if not model_ids:
             continue
 
-        input_match = re.search(
-            r'\|\s*Input price[^|]*\|\s*([^|]+)\|',
-            section
-        )
+        input_match = re.search(r"\|\s*Input price[^|]*\|\s*([^|]+)\|", section)
         if not input_match:
             continue
 
         free_col = input_match.group(1).strip()
         is_free = "free of charge" in free_col.lower()
         for model_id in model_ids:
-            if not re.match(r'^[a-z]', model_id):
+            if not re.match(r"^[a-z]", model_id):
                 continue
             if is_free:
                 free_set.add(model_id)
             else:
                 paid_set.add(model_id)
+
+    if not free_set and not paid_set:
+        raise RuntimeError("No Gemini models found in pricing page — format may have changed")
 
     return free_set, paid_set
 
@@ -155,25 +156,32 @@ def write_gemini_cache(cache_file: Path, free_set: set[str], paid_set: set[str])
     """Write Gemini free-tier cache to disk."""
     cache_file.parent.mkdir(parents=True, exist_ok=True)
     data = {
-        "fetched": datetime.now(timezone.utc).isoformat(),
+        "fetched": datetime.now(UTC).isoformat(),
         "free": sorted(free_set),
         "paid": sorted(paid_set),
     }
     cache_file.write_text(json.dumps(data, indent=2) + "\n")
 
 
-def is_free_tier(provider: str, model_id: str, rules: dict[str, FreeTierRule],
-                 gemini_cache: dict | None = None) -> bool:
+_gemini_lookup_cache: tuple[int, set[str], set[str]] | None = None
+
+
+def _get_gemini_lookup(gemini_cache: dict) -> tuple[set[str], set[str]]:
+    """Build and cache lowercased free/paid sets from gemini_cache without mutating it."""
+    global _gemini_lookup_cache
+    cache_id = id(gemini_cache)
+    if _gemini_lookup_cache is not None and _gemini_lookup_cache[0] == cache_id:
+        return _gemini_lookup_cache[1], _gemini_lookup_cache[2]
+    free_set = {m.lower() for m in gemini_cache.get("free", [])}
+    paid_set = {m.lower() for m in gemini_cache.get("paid", [])}
+    _gemini_lookup_cache = (cache_id, free_set, paid_set)
+    return free_set, paid_set
+
+
+def is_free_tier(provider: str, model_id: str, rules: dict[str, FreeTierRule], gemini_cache: dict | None = None) -> bool:
     """Check if a model is free based on cache (for Gemini) or user-configured rules."""
     if provider == "gemini" and gemini_cache is not None:
-        free_set = gemini_cache.get("_free_set")
-        paid_set = gemini_cache.get("_paid_set")
-        if free_set is None:
-            free_set = {m.lower() for m in gemini_cache.get("free", [])}
-            gemini_cache["_free_set"] = free_set
-        if paid_set is None:
-            paid_set = {m.lower() for m in gemini_cache.get("paid", [])}
-            gemini_cache["_paid_set"] = paid_set
+        free_set, paid_set = _get_gemini_lookup(gemini_cache)
 
         mid = model_id.lower()
         base_id = mid.split("/")[-1] if "/" in mid else mid
@@ -205,14 +213,12 @@ KNOWN_FREE_TIERS: dict[str, tuple[str, str, str]] = {
     "groq": (
         "All models free with rate limits",
         "groq",
-        "# Groq: all models free with rate limits (30 RPM, 6000 RPD)\n"
-        "# https://console.groq.com/docs/rate-limits",
+        "# Groq: all models free with rate limits (30 RPM, 6000 RPD)\n# https://console.groq.com/docs/rate-limits",
     ),
     "cerebras": (
         "All models free (1M tokens/day)",
         "cerebras",
-        "# Cerebras: all models free (1M tokens/day, 30 RPM)\n"
-        "# https://inference-docs.cerebras.ai/api-reference/rate-limits",
+        "# Cerebras: all models free (1M tokens/day, 30 RPM)\n# https://inference-docs.cerebras.ai/api-reference/rate-limits",
     ),
     "gemini": (
         "Free tier for most models (excludes 3.1-Pro, Imagen, Veo, etc.)",
@@ -220,7 +226,7 @@ KNOWN_FREE_TIERS: dict[str, tuple[str, str, str]] = {
         "# Gemini: free tier for most text/code models. Paid-only models excluded.\n"
         "# IMPORTANT: Gemini billing is per-project, not per-account. If your API\n"
         "# key is from a project with Cloud Billing enabled AND prepaid, ALL usage\n"
-        "# on that key is billed — there is no \"free quota then pay for overages.\"\n"
+        '# on that key is billed — there is no "free quota then pay for overages."\n'
         "# To keep free access alongside paid, use two API keys (one per project).\n"
         "# https://ai.google.dev/gemini-api/docs/billing\n"
         "# https://ai.google.dev/gemini-api/docs/pricing",
@@ -228,8 +234,7 @@ KNOWN_FREE_TIERS: dict[str, tuple[str, str, str]] = {
     "mistral": (
         "All models free on Experiment plan (rate-limited)",
         "mistral",
-        "# Mistral: all models free on Experiment plan (rate-limited)\n"
-        "# https://docs.mistral.ai/deployment/ai-studio/tier",
+        "# Mistral: all models free on Experiment plan (rate-limited)\n# https://docs.mistral.ai/deployment/ai-studio/tier",
     ),
 }
 

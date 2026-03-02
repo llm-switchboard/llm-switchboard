@@ -5,18 +5,23 @@ Thanks for your interest in contributing!
 ## Development Setup
 
 ```bash
-git clone https://github.com/switchboard-ai/llm-switchboard.git
+git clone https://github.com/llm-switchboard/llm-switchboard.git
 cd llm-switchboard
+pip install -e .
+pip install ruff mypy pytest
 ```
 
-No dependencies to install — the project uses Python 3.11+ stdlib only.
+No runtime dependencies to install — the project uses Python 3.11+ stdlib only.
 
 ## Running Tests
 
 ```bash
-make test                          # unittest discovery
+make ci                            # run everything (test + lint + typecheck)
+make test                          # pytest
 make check                         # compile check (syntax errors)
-python3 bin/llm-switchboard --self-test  # run via CLI
+make lint                          # ruff linter
+make typecheck                     # mypy
+make fmt                           # auto-format with ruff
 ```
 
 ## Project Structure
@@ -28,13 +33,13 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for module layout and design de
 - **No external dependencies.** Everything must work with Python stdlib.
 - **Write tests.** New features should include unit tests in `tests/`.
 - **Keep it simple.** This is a focused CLI tool, not a framework.
-- **Run `make test` before submitting.** All tests must pass.
+- **Run `make ci` before submitting.** All checks must pass.
 
 ## Submitting Changes
 
 1. Fork the repo and create a feature branch
 2. Make your changes
-3. Run `make test` and `make check`
+3. Run `make ci`
 4. Open a pull request with a clear description of what changed and why
 
 ## Reporting Issues

@@ -6,13 +6,22 @@ import unittest
 from pathlib import Path
 
 from llm_switchboard.compat import (
-    load_compat, save_compat,
-    get_compat_status, get_agent_ok_models,
-    _validate_format, _validate_constraint, _validate_no_hallucination,
-    _validate_tool_call_schema, _validate_tool_call_chaining,
-    _validate_tool_call_error_recovery, _parse_tool_calls,
+    MIN_PASS_TOTAL,
+    REQUIRED_TESTS,
+    TESTS,
+    TOOL_SCHEMAS,
+    _parse_tool_calls,
+    _validate_constraint,
+    _validate_format,
+    _validate_no_hallucination,
+    _validate_tool_call_chaining,
+    _validate_tool_call_error_recovery,
+    _validate_tool_call_schema,
     compute_agent_status,
-    TESTS, REQUIRED_TESTS, MIN_PASS_TOTAL, TOOL_SCHEMAS,
+    get_agent_ok_models,
+    get_compat_status,
+    load_compat,
+    save_compat,
 )
 
 
@@ -248,9 +257,11 @@ class TestParseToolCalls(unittest.TestCase):
     """Test _parse_tool_calls helper."""
 
     def test_valid_string_args(self):
-        msg = _make_message(tool_calls=[
-            _make_tool_call("list_files", {"path": "/src"}),
-        ])
+        msg = _make_message(
+            tool_calls=[
+                _make_tool_call("list_files", {"path": "/src"}),
+            ]
+        )
         calls = _parse_tool_calls(msg)
         self.assertEqual(len(calls), 1)
         self.assertEqual(calls[0]["name"], "list_files")
@@ -258,21 +269,29 @@ class TestParseToolCalls(unittest.TestCase):
 
     def test_valid_dict_args(self):
         """Some APIs return arguments as dict, not JSON string."""
-        msg = _make_message(tool_calls=[{
-            "id": "c1",
-            "type": "function",
-            "function": {"name": "read_file", "arguments": {"path": "/a.py"}},
-        }])
+        msg = _make_message(
+            tool_calls=[
+                {
+                    "id": "c1",
+                    "type": "function",
+                    "function": {"name": "read_file", "arguments": {"path": "/a.py"}},
+                }
+            ]
+        )
         calls = _parse_tool_calls(msg)
         self.assertEqual(len(calls), 1)
         self.assertEqual(calls[0]["name"], "read_file")
 
     def test_invalid_json_args(self):
-        msg = _make_message(tool_calls=[{
-            "id": "c1",
-            "type": "function",
-            "function": {"name": "read_file", "arguments": "not json {{{"},
-        }])
+        msg = _make_message(
+            tool_calls=[
+                {
+                    "id": "c1",
+                    "type": "function",
+                    "function": {"name": "read_file", "arguments": "not json {{{"},
+                }
+            ]
+        )
         calls = _parse_tool_calls(msg)
         self.assertEqual(len(calls), 0)
 
@@ -287,10 +306,12 @@ class TestParseToolCalls(unittest.TestCase):
         self.assertEqual(calls, [])
 
     def test_multiple_calls(self):
-        msg = _make_message(tool_calls=[
-            _make_tool_call("read_file", {"path": "/a.py"}, "c1"),
-            _make_tool_call("write_file", {"path": "/b.py", "content": "x"}, "c2"),
-        ])
+        msg = _make_message(
+            tool_calls=[
+                _make_tool_call("read_file", {"path": "/a.py"}, "c1"),
+                _make_tool_call("write_file", {"path": "/b.py", "content": "x"}, "c2"),
+            ]
+        )
         calls = _parse_tool_calls(msg)
         self.assertEqual(len(calls), 2)
 
@@ -304,16 +325,20 @@ class TestToolCallSchemaValidator(unittest.TestCase):
     """Test _validate_tool_call_schema."""
 
     def test_valid_list_files(self):
-        msg = _make_message(tool_calls=[
-            _make_tool_call("list_files", {"path": "/src"}),
-        ])
+        msg = _make_message(
+            tool_calls=[
+                _make_tool_call("list_files", {"path": "/src"}),
+            ]
+        )
         self.assertTrue(_validate_tool_call_schema(msg))
 
     def test_valid_other_tool(self):
         """Accept any valid tool call to one of our tools."""
-        msg = _make_message(tool_calls=[
-            _make_tool_call("read_file", {"path": "/src/main.py"}),
-        ])
+        msg = _make_message(
+            tool_calls=[
+                _make_tool_call("read_file", {"path": "/src/main.py"}),
+            ]
+        )
         self.assertTrue(_validate_tool_call_schema(msg))
 
     def test_no_tool_calls(self):
@@ -321,25 +346,33 @@ class TestToolCallSchemaValidator(unittest.TestCase):
         self.assertFalse(_validate_tool_call_schema(msg))
 
     def test_unknown_tool_name(self):
-        msg = _make_message(tool_calls=[
-            _make_tool_call("delete_file", {"path": "/src"}),
-        ])
+        msg = _make_message(
+            tool_calls=[
+                _make_tool_call("delete_file", {"path": "/src"}),
+            ]
+        )
         self.assertFalse(_validate_tool_call_schema(msg))
 
     def test_missing_path_arg(self):
         """list_files without path should still pass via fallback."""
-        msg = _make_message(tool_calls=[
-            _make_tool_call("list_files", {"directory": "/src"}),
-        ])
+        msg = _make_message(
+            tool_calls=[
+                _make_tool_call("list_files", {"directory": "/src"}),
+            ]
+        )
         # No path arg on list_files, but fallback accepts any valid tool name
         self.assertTrue(_validate_tool_call_schema(msg))
 
     def test_invalid_arguments_json(self):
-        msg = _make_message(tool_calls=[{
-            "id": "c1",
-            "type": "function",
-            "function": {"name": "list_files", "arguments": "broken{json"},
-        }])
+        msg = _make_message(
+            tool_calls=[
+                {
+                    "id": "c1",
+                    "type": "function",
+                    "function": {"name": "list_files", "arguments": "broken{json"},
+                }
+            ]
+        )
         self.assertFalse(_validate_tool_call_schema(msg))
 
 
@@ -347,23 +380,29 @@ class TestToolCallChainingValidator(unittest.TestCase):
     """Test _validate_tool_call_chaining."""
 
     def test_read_config(self):
-        msg = _make_message(tool_calls=[
-            _make_tool_call("read_file", {"path": "/src/config.py"}, "c1"),
-        ])
+        msg = _make_message(
+            tool_calls=[
+                _make_tool_call("read_file", {"path": "/src/config.py"}, "c1"),
+            ]
+        )
         self.assertTrue(_validate_tool_call_chaining(msg))
 
     def test_read_and_write(self):
-        msg = _make_message(tool_calls=[
-            _make_tool_call("read_file", {"path": "/src/config.py"}, "c1"),
-            _make_tool_call("write_file", {"path": "/src/config.py", "content": "new"}, "c2"),
-        ])
+        msg = _make_message(
+            tool_calls=[
+                _make_tool_call("read_file", {"path": "/src/config.py"}, "c1"),
+                _make_tool_call("write_file", {"path": "/src/config.py", "content": "new"}, "c2"),
+            ]
+        )
         self.assertTrue(_validate_tool_call_chaining(msg))
 
     def test_only_write_no_read(self):
         """Write without read — accepted via fallback (valid tool)."""
-        msg = _make_message(tool_calls=[
-            _make_tool_call("write_file", {"path": "/src/config.py", "content": "x"}, "c1"),
-        ])
+        msg = _make_message(
+            tool_calls=[
+                _make_tool_call("write_file", {"path": "/src/config.py", "content": "x"}, "c1"),
+            ]
+        )
         self.assertTrue(_validate_tool_call_chaining(msg))
 
     def test_no_tool_calls(self):
@@ -372,9 +411,11 @@ class TestToolCallChainingValidator(unittest.TestCase):
 
     def test_read_wrong_file(self):
         """read_file for wrong file — accepted via fallback (valid tool)."""
-        msg = _make_message(tool_calls=[
-            _make_tool_call("read_file", {"path": "/other.py"}, "c1"),
-        ])
+        msg = _make_message(
+            tool_calls=[
+                _make_tool_call("read_file", {"path": "/other.py"}, "c1"),
+            ]
+        )
         self.assertTrue(_validate_tool_call_chaining(msg))
 
 

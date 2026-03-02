@@ -5,41 +5,76 @@ import os
 import sys
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
-from pathlib import Path
 
 from . import __version__
 from .cache import fetch_cached
-from .config import (
-    OPENWEBUI_URL, OPENWEBUI_KEY,
-    CONFIG_DIR, CACHE_DIR, DETECT_CACHE,
-    FAV_FILE, FREE_PROVIDERS_FILE, USAGE_FILE,
-    ensure_dirs, fav_list, fav_add, fav_rm,
-    last_model_read, last_model_write,
-)
-from .free_tier import (
-    FreeTierRule, KNOWN_FREE_TIERS, DEFAULT_FREE_PROVIDERS, CONFIG_HEADER,
-    free_tier_rules_from_file, parse_free_tier_rules,
-    load_gemini_cache, gemini_cache_stale, fetch_gemini_free_tier,
-    write_gemini_cache, write_free_tier_config, is_free_tier,
-)
-from .models import Model, provider_from_url, format_ctx, PROVIDER_LIMITS
 from .compat import (
-    run_compat_test, load_compat, get_agent_ok_models, TESTS,
-    _run_one_test, compute_agent_status, save_compat,
-    REQUIRED_TESTS, MIN_PASS_TOTAL, COMPAT_FILE,
+    COMPAT_FILE,
+    MIN_PASS_TOTAL,
+    REQUIRED_TESTS,
+    TESTS,
+    _run_one_test,
+    compute_agent_status,
+    get_agent_ok_models,
+    load_compat,
+    run_compat_test,
+    save_compat,
 )
-from .session import load_local_usage, save_local_usage, get_all_usage
-from .util import (
-    IS_TTY, IS_STDIN_TTY, PRIVATE_IP_RE,
-    CYAN, GREEN, YELLOW, MAGENTA, BLUE, RED,
-    DIM, BOLD, RESET,
-    sanitize_display, fmt_price, fmt_tokens, die,
+from .config import (
+    CACHE_DIR,
+    CONFIG_DIR,
+    DETECT_CACHE,
+    FREE_PROVIDERS_FILE,
+    OPENWEBUI_KEY,
+    OPENWEBUI_URL,
+    USAGE_FILE,
+    ensure_dirs,
+    fav_add,
+    fav_list,
+    fav_rm,
+    last_model_read,
 )
 from .endpoint import (
-    resolve_endpoint, format_endpoint_info, load_api_mode, normalize_url,
-    Endpoint, VALID_MODES, VALID_PREFERENCES,
-    _probe_get, _looks_like_models_list, _extract_model_id,
-    _fetch_any_model_id, _probe_openai_chat, _probe_anthropic_chat,
+    VALID_MODES,
+    VALID_PREFERENCES,
+    Endpoint,
+    _fetch_any_model_id,
+    _looks_like_models_list,
+    _probe_anthropic_chat,
+    _probe_get,
+    _probe_openai_chat,
+    load_api_mode,
+    normalize_url,
+    resolve_endpoint,
+)
+from .free_tier import (
+    DEFAULT_FREE_PROVIDERS,
+    KNOWN_FREE_TIERS,
+    fetch_gemini_free_tier,
+    free_tier_rules_from_file,
+    gemini_cache_stale,
+    is_free_tier,
+    load_gemini_cache,
+    parse_free_tier_rules,
+    write_free_tier_config,
+    write_gemini_cache,
+)
+from .models import Model, format_ctx, provider_from_url
+from .session import get_all_usage
+from .util import (
+    BOLD,
+    CYAN,
+    DIM,
+    GREEN,
+    IS_STDIN_TTY,
+    PRIVATE_IP_RE,
+    RED,
+    RESET,
+    YELLOW,
+    die,
+    fmt_price,
+    fmt_tokens,
+    sanitize_display,
 )
 from .webui import api_get, api_post
 
@@ -47,14 +82,35 @@ from .webui import api_get, api_post
 # These are populated by fetch_models() and shared with the TUI module.
 
 _OWN_FLAGS = {
-    "-h", "--help", "-f", "--free", "-l", "--last", "--refresh",
-    "--fav", "--free-tier", "--setup", "-s", "--stats", "--reset",
-    "--list-models", "--select", "--favorites", "--free-only",
-    "--provider", "--json", "--self-test", "--version",
-    "--print-paths", "--print-endpoints",
-    "--compat-test", "--compat-report", "--agent-ok",
-    "--all", "--api-mode", "--base-url", "--auto-prefer",
-    "--doctor", "--clear-detect-cache",
+    "-h",
+    "--help",
+    "-f",
+    "--free",
+    "-l",
+    "--last",
+    "--refresh",
+    "--fav",
+    "--free-tier",
+    "--setup",
+    "-s",
+    "--stats",
+    "--reset",
+    "--list-models",
+    "--select",
+    "--favorites",
+    "--free-only",
+    "--provider",
+    "--json",
+    "--version",
+    "--compat-test",
+    "--compat-report",
+    "--agent-ok",
+    "--all",
+    "--api-mode",
+    "--base-url",
+    "--auto-prefer",
+    "--doctor",
+    "--clear-detect-cache",
 }
 
 # ─── Resolved Endpoint (lazily initialized) ─────────────────────────
@@ -71,19 +127,23 @@ def _resolve_api() -> Endpoint:
     global _RESOLVED_EP
     if _RESOLVED_EP is not None:
         return _RESOLVED_EP
-    mode = _CLI_API_MODE or load_api_mode()
+    file_mode = load_api_mode()
+    mode = _CLI_API_MODE or file_mode
     base = _CLI_BASE_URL
-    source = "cli" if _CLI_API_MODE else ("config" if load_api_mode() != "auto" else "")
+    source = "cli" if _CLI_API_MODE else ("config" if file_mode != "auto" else "")
     _RESOLVED_EP = resolve_endpoint(
-        mode=mode, base_url=base, prefer=_CLI_AUTO_PREFER, source=source,
+        mode=mode,
+        base_url=base,
+        prefer=_CLI_AUTO_PREFER,
+        source=source,
     )
     return _RESOLVED_EP
 
 
-def _populate_tui_globals(models, model_map, providers, provider_free,
-                          provider_local, provider_cloud, provider_keys):
+def _populate_tui_globals(models, model_map, providers, provider_free, provider_local, provider_cloud, provider_keys):
     """Push model data into the tui module's global state."""
     from . import tui
+
     tui.MODELS = models
     tui.MODEL_MAP = model_map
     tui.PROVIDERS = providers
@@ -103,6 +163,7 @@ def fetch_models() -> tuple[list[Model], dict[str, Model]]:
     with Spinner("Fetching models..."):
         with ThreadPoolExecutor(max_workers=3) as pool:
             from .config import CONN_CACHE, OLLAMA_CACHE
+
             f_models = pool.submit(api_get, "/api/models", 30)
             f_openai = pool.submit(fetch_cached, api_get, "/openai/config", CONN_CACHE, "OPENAI_API_BASE_URLS")
             f_ollama = pool.submit(fetch_cached, api_get, "/ollama/config", OLLAMA_CACHE, "ENABLE_OLLAMA_API")
@@ -127,6 +188,7 @@ def fetch_models() -> tuple[list[Model], dict[str, Model]]:
 
     user_free = free_tier_rules_from_file(FREE_PROVIDERS_FILE)
     from .config import GEMINI_FREE_CACHE
+
     gemini_cache = load_gemini_cache(GEMINI_FREE_CACHE) if "gemini" in user_free else None
 
     models: list[Model] = []
@@ -155,18 +217,17 @@ def fetch_models() -> tuple[list[Model], dict[str, Model]]:
         info_params = info.get("params", {}) or {}
         meta = info.get("meta", {}) or {}
 
-        ctx_raw = (item.get("context_length")
-                   or oai.get("context_length")
-                   or item.get("max_context_length")
-                   or oai.get("max_context_length")
-                   or item.get("context_window")
-                   or info_params.get("max_context_length"))
+        ctx_raw = (
+            item.get("context_length")
+            or oai.get("context_length")
+            or item.get("max_context_length")
+            or oai.get("max_context_length")
+            or item.get("context_window")
+            or info_params.get("max_context_length")
+        )
         ctx_k = format_ctx(ctx_raw)
 
-        desc_raw = (meta.get("description")
-                    or item.get("description")
-                    or oai.get("description")
-                    or "")
+        desc_raw = meta.get("description") or item.get("description") or oai.get("description") or ""
         desc = sanitize_display(desc_raw).replace("\n", " ").strip()
         if len(desc) > 120:
             desc = desc[:117].rsplit(" ", 1)[0] + "..."
@@ -223,21 +284,18 @@ def fetch_models() -> tuple[list[Model], dict[str, Model]]:
 
     provider_keys = sorted(providers.keys())
 
-    _populate_tui_globals(models, model_map, providers, provider_free,
-                          provider_local, provider_cloud, provider_keys)
+    _populate_tui_globals(models, model_map, providers, provider_free, provider_local, provider_cloud, provider_keys)
 
     if "gemini" in user_free and "gemini" in providers and gemini_cache_stale(GEMINI_FREE_CACHE):
-        print(f"  {YELLOW}⚠ Gemini free-tier data is stale.{RESET} "
-              f"Run {BOLD}--free-tier update{RESET} to refresh.",
-              file=sys.stderr)
+        print(f"  {YELLOW}⚠ Gemini free-tier data is stale.{RESET} Run {BOLD}--free-tier update{RESET} to refresh.", file=sys.stderr)
 
     return models, model_map
 
 
 # ─── Non-Interactive Commands ────────────────────────────────────────
 
-def cmd_list_models(as_json: bool = False, free_only: bool = False,
-                    provider_filter: str = "", agent_ok: bool = False) -> None:
+
+def cmd_list_models(as_json: bool = False, free_only: bool = False, provider_filter: str = "", agent_ok: bool = False) -> None:
     """List models in text or JSON format."""
     models, model_map = fetch_models()
 
@@ -301,6 +359,7 @@ def cmd_select(model_id: str, extra_args: list[str]) -> None:
             print(f"Model not found: {model_id}", file=sys.stderr)
             sys.exit(1)
     from .tui import launch_claude
+
     sys.exit(launch_claude(model_id, extra_args))
 
 
@@ -371,8 +430,7 @@ def _doctor_report() -> int:
         model_count = len(models_resp.get("data", []))
         print(f"  Models endpoint: {GREEN}OK{RESET}  {models_url}  ({model_count} models)")
     elif models_resp is not None:
-        print(f"  Models endpoint: {YELLOW}WARN{RESET}  {models_url}  "
-              f"(responded but unexpected shape)")
+        print(f"  Models endpoint: {YELLOW}WARN{RESET}  {models_url}  (responded but unexpected shape)")
         exit_code = max(exit_code, 1)
     else:
         print(f"  Models endpoint: {RED}FAIL{RESET}  {models_url}  (no response or not JSON)")
@@ -426,19 +484,20 @@ def _doctor_report() -> int:
     # ── Recommendations ──
     recs = []
     if exit_code >= 2:
-        recs.append(f"Chat probe failed. Try: --api-mode openai  or  --api-mode anthropic")
-        recs.append(f"Run --print-endpoints to see detected paths")
+        recs.append("Chat probe failed. Try: --api-mode openai  or  --api-mode anthropic")
+        recs.append("Run --print-endpoints to see detected paths")
     if exit_code >= 1 and exit_code < 2:
-        recs.append(f"Models endpoint issue. Check that OPENWEBUI_URL is correct")
+        recs.append("Models endpoint issue. Check that OPENWEBUI_URL is correct")
     if cache_exists:
         import time
+
         age = time.time() - DETECT_CACHE.stat().st_mtime
         if age > 3600:
             recs.append(f"Detect cache is stale ({int(age / 60)}m old). Run: --clear-detect-cache")
     if not results:
-        recs.append(f"No agent compat data. Run: --compat-test --all")
+        recs.append("No agent compat data. Run: --compat-test --all")
     elif n_pass == 0:
-        recs.append(f"No agent-ok models. Run: --compat-test --all  then  --list-models --agent-ok")
+        recs.append("No agent-ok models. Run: --compat-test --all  then  --list-models --agent-ok")
 
     if recs:
         print(f"\n{BOLD}Recommendations{RESET}")
@@ -457,10 +516,10 @@ def _doctor_report() -> int:
 def cmd_compat_test(model_id: str) -> None:
     """Run compat tests on a single model, print per-test pass/fail."""
     from .tui import Spinner
+
     ep = _resolve_api()
     print(f"\n  {BOLD}Compatibility test: {model_id}{RESET}")
-    print(f"  {DIM}6 tests: 3 text + 3 tool-call  mode={ep.mode}  "
-          f"(required: {', '.join(sorted(REQUIRED_TESTS))}){RESET}\n")
+    print(f"  {DIM}6 tests: 3 text + 3 tool-call  mode={ep.mode}  (required: {', '.join(sorted(REQUIRED_TESTS))}){RESET}\n")
 
     results = {}
     for test_name, test_def in TESTS.items():
@@ -468,16 +527,13 @@ def cmd_compat_test(model_id: str) -> None:
         tool_tag = f" {CYAN}[tool]{RESET}" if test_def.get("uses_tools") else ""
         req_tag = f" {YELLOW}*{RESET}" if test_name in REQUIRED_TESTS else ""
         with Spinner(f"Testing {test_name}..."):
-            result = _run_one_test(model_id, test_name, test_def,
-                                   mode=ep.mode, chat_path=ep.chat_path,
-                                   base_url=ep.base_url)
+            result = _run_one_test(model_id, test_name, test_def, mode=ep.mode, chat_path=ep.chat_path, base_url=ep.base_url)
         results[test_name] = result
 
         err = result.get("error", "")
         ms = result.get("latency_ms", 0)
         if err:
-            print(f"  {RED}FAIL{RESET}  {test_name}{tool_tag}{req_tag} — {desc}  "
-                  f"{DIM}(error: {err}){RESET}")
+            print(f"  {RED}FAIL{RESET}  {test_name}{tool_tag}{req_tag} — {desc}  {DIM}(error: {err}){RESET}")
         else:
             tag = f"{GREEN}PASS{RESET}" if result["passed"] else f"{RED}FAIL{RESET}"
             print(f"  {tag}  {test_name}{tool_tag}{req_tag} — {desc}  {DIM}({ms}ms){RESET}")
@@ -489,6 +545,7 @@ def cmd_compat_test(model_id: str) -> None:
     status = compute_agent_status(results)
 
     import time as _time
+
     entry = {
         "last_run": _time.strftime("%Y-%m-%dT%H:%M:%SZ", _time.gmtime()),
         "tests": results,
@@ -507,14 +564,11 @@ def cmd_compat_test(model_id: str) -> None:
         color = YELLOW
     else:
         color = RED
-    print(f"\n  Result: {color}{status.upper()}{RESET}  "
-          f"({pass_count}/{pass_count + fail_count} passed, "
-          f"{total_latency}ms total)")
+    print(f"\n  Result: {color}{status.upper()}{RESET}  ({pass_count}/{pass_count + fail_count} passed, {total_latency}ms total)")
     if status == "pass":
         print(f"  {GREEN}AGENT ✓{RESET}  Model is tool-call compatible\n")
     elif status == "partial":
-        print(f"  {YELLOW}AGENT ⚠{RESET}  Partial compatibility — "
-              f"required: {', '.join(t for t in REQUIRED_TESTS if not results.get(t, {}).get('passed'))}\n")
+        print(f"  {YELLOW}AGENT ⚠{RESET}  Partial compatibility — required: {', '.join(t for t in REQUIRED_TESTS if not results.get(t, {}).get('passed'))}\n")
     else:
         print(f"  {RED}AGENT ✗{RESET}  Not tool-call compatible\n")
 
@@ -523,11 +577,9 @@ def cmd_compat_test_all() -> None:
     """Run compat tests on all models."""
     ep = _resolve_api()
     models, model_map = fetch_models()
-    print(f"\n  {BOLD}Compatibility testing all {len(models)} models{RESET}  "
-          f"{DIM}(mode={ep.mode}){RESET}\n")
+    print(f"\n  {BOLD}Compatibility testing all {len(models)} models{RESET}  {DIM}(mode={ep.mode}){RESET}\n")
     for m in models:
-        entry = run_compat_test(m.id, mode=ep.mode, chat_path=ep.chat_path,
-                                base_url=ep.base_url)
+        entry = run_compat_test(m.id, mode=ep.mode, chat_path=ep.chat_path, base_url=ep.base_url)
         status = entry["last_status"]
         if status == "pass":
             color = GREEN
@@ -535,9 +587,7 @@ def cmd_compat_test_all() -> None:
             color = YELLOW
         else:
             color = RED
-        print(f"  {color}{status.upper():<7s}{RESET} {m.id}  "
-              f"{DIM}({entry['pass_count']}/{entry['pass_count'] + entry['fail_count']} passed, "
-              f"{entry['latency_ms']}ms){RESET}")
+        print(f"  {color}{status.upper():<7s}{RESET} {m.id}  {DIM}({entry['pass_count']}/{entry['pass_count'] + entry['fail_count']} passed, {entry['latency_ms']}ms){RESET}")
     print()
 
 
@@ -560,10 +610,7 @@ def _compat_model_summary(entry: dict) -> dict:
     }
 
 
-_SCORING_RULES = (
-    f"PASS requires: all required tests pass AND >= {MIN_PASS_TOTAL}/{len(TESTS)} total. "
-    f"FAIL if tool_call_schema fails. PARTIAL otherwise."
-)
+_SCORING_RULES = f"PASS requires: all required tests pass AND >= {MIN_PASS_TOTAL}/{len(TESTS)} total. FAIL if tool_call_schema fails. PARTIAL otherwise."
 
 
 def cmd_compat_report(as_json: bool = False) -> None:
@@ -581,7 +628,7 @@ def cmd_compat_report(as_json: bool = False) -> None:
             "models": {},
         }
         for mid in sorted(results):
-            out["models"][mid] = _compat_model_summary(results[mid])
+            out["models"][mid] = _compat_model_summary(results[mid])  # type: ignore[index]
         print(json.dumps(out, indent=2))
         return
 
@@ -615,8 +662,7 @@ def cmd_compat_report(as_json: bool = False) -> None:
             else:
                 why = f"  {DIM}(failed: {', '.join(summary['failed_tests'][:3])}){RESET}"
 
-        print(f"  {color}{badge:<8s}{RESET} {mid}  "
-              f"{DIM}{pc}/{pc + fc} passed  {ms}ms  {run}{RESET}{why}")
+        print(f"  {color}{badge:<8s}{RESET} {mid}  {DIM}{pc}/{pc + fc} passed  {ms}ms  {run}{RESET}{why}")
 
         tests = entry.get("tests", {})
         for tname in test_names:
@@ -644,9 +690,11 @@ def cmd_compat_report(as_json: bool = False) -> None:
 
 # ─── Legacy Commands ─────────────────────────────────────────────────
 
+
 def do_refresh() -> None:
-    from .tui import Spinner
     from .config import CONN_CACHE
+    from .tui import Spinner
+
     with Spinner("Refreshing model list from all providers..."):
         if CONN_CACHE.exists():
             CONN_CACHE.unlink()
@@ -666,7 +714,8 @@ def run_reset() -> None:
 
 
 def run_stats() -> None:
-    from .tui import get_color, MODEL_MAP
+    from .tui import MODEL_MAP, get_color
+
     models_data = get_all_usage()
     if not models_data:
         print(f"\n  {YELLOW}No usage data available.{RESET}")
@@ -690,10 +739,15 @@ def run_stats() -> None:
         out_t = entry.get("output_tokens", 0)
         if msgs == 0:
             continue
-        by_provider[provider].append({
-            "model_id": mid, "message_count": msgs, "sessions": sessions,
-            "input_tokens": in_t, "output_tokens": out_t,
-        })
+        by_provider[provider].append(
+            {
+                "model_id": mid,
+                "message_count": msgs,
+                "sessions": sessions,
+                "input_tokens": in_t,
+                "output_tokens": out_t,
+            }
+        )
         total_msgs += msgs
         total_sessions += sessions
         total_in += in_t
@@ -703,15 +757,14 @@ def run_stats() -> None:
         print(f"\n  {DIM}No usage recorded yet.{RESET}\n")
         return
 
-    sorted_providers = sorted(by_provider.items(),
-                              key=lambda x: sum(e["message_count"] for e in x[1]),
-                              reverse=True)
+    sorted_providers = sorted(by_provider.items(), key=lambda x: sum(e["message_count"] for e in x[1]), reverse=True)
 
     line_w = 65
     print(f"\n  {BOLD}Usage Statistics (all time){RESET}")
     print(f"  {DIM}{'─' * line_w}{RESET}")
 
     import re
+
     for provider, entries in sorted_providers:
         color = get_color(provider)
         print(f"  {color}{provider}{RESET}")
@@ -726,7 +779,7 @@ def run_stats() -> None:
             has_tokens = in_t > 0 or out_t > 0
             sess_str = f"{sess:>3d}s" if sess else "   "
             if has_tokens and m and m.price:
-                match = re.match(r'\$([0-9.]+)/\$([0-9.]+)', m.price)
+                match = re.match(r"\$([0-9.]+)/\$([0-9.]+)", m.price)
                 cost = None
                 if match:
                     in_rate = float(match.group(1))
@@ -791,12 +844,16 @@ def _handle_fav(args: list[str]) -> None:
 
 def _handle_free_tier(args: list[str]) -> None:
     from .tui import Spinner
+
     if not args:
-        die("Usage: llm-switchboard --free-tier add|rm|list|update <entry> [entry ...]\n"
+        die(
+            "Usage: llm-switchboard --free-tier add|rm|list|update <entry> [entry ...]\n"
             "  Entries: 'groq' (all models) or 'gemini:flash,gemma' (pattern match)\n"
-            "  'update' fetches latest Gemini pricing data")
+            "  'update' fetches latest Gemini pricing data"
+        )
     subcmd = args[0]
     from .config import GEMINI_FREE_CACHE
+
     if subcmd == "update":
         print(f"\n  {BOLD}Fetching Gemini pricing data...{RESET}")
         with Spinner("Fetching pricing..."):
@@ -826,9 +883,10 @@ def _handle_free_tier(args: list[str]) -> None:
         existing = free_tier_rules_from_file(FREE_PROVIDERS_FILE)
         added = []
         for entry in args[1:]:
-            prov = entry.split(":")[0].strip().lower()
-            existing[prov] = entry.lower()
-            added.append(entry.lower())
+            parsed = parse_free_tier_rules(entry.lower())
+            for prov, rule in parsed.items():
+                existing[prov] = rule
+                added.append(str(rule))
         if added:
             write_free_tier_config(FREE_PROVIDERS_FILE, existing)
             print(f"Added free-tier entries: {', '.join(added)}")
@@ -851,7 +909,7 @@ def _handle_free_tier(args: list[str]) -> None:
         rules = free_tier_rules_from_file(FREE_PROVIDERS_FILE)
         if not rules:
             print("No free-tier providers configured.")
-            print(f"Run: llm-switchboard --setup")
+            print("Run: llm-switchboard --setup")
         else:
             print(f"{BOLD}Free-tier config:{RESET}")
             for prov in sorted(rules):
@@ -877,8 +935,7 @@ def _handle_free_tier(args: list[str]) -> None:
                     print(f"\n  {YELLOW}⚠ Gemini pricing cache is stale or missing.{RESET}")
                     print(f"    Run {BOLD}--free-tier update{RESET} to fetch latest pricing data.")
     else:
-        die(f"Unknown --free-tier subcommand: {subcmd}\n"
-            "Usage: --free-tier add|rm|list|update <entry>")
+        die(f"Unknown --free-tier subcommand: {subcmd}\nUsage: --free-tier add|rm|list|update <entry>")
 
 
 def _write_default_free_config() -> None:
@@ -896,10 +953,12 @@ def _write_default_free_config() -> None:
 
 def run_setup() -> None:
     from .tui import Spinner, get_color, readline_input
+
     print(f"\n  {BOLD}llm-switchboard setup{RESET}")
     print(f"  {DIM}Detecting your providers and pricing data...{RESET}\n")
 
     from .tui import MODELS as tui_models
+
     if not tui_models:
         fetch_models()
     from .tui import MODELS
@@ -932,7 +991,7 @@ def run_setup() -> None:
         print()
 
     if not needs_input:
-        print(f"  All providers report pricing. No manual config needed.")
+        print("  All providers report pricing. No manual config needed.")
         print(f"  {DIM}Run --setup anytime to reconfigure.{RESET}\n")
         return
 
@@ -944,7 +1003,7 @@ def run_setup() -> None:
         print(f"    {get_color(p)}{p}{RESET}  {s['total']} models{hint_str}")
     print()
 
-    print(f"  Some providers offer free API plans with rate limits.")
+    print("  Some providers offer free API plans with rate limits.")
     print(f"  If your API key is on a free plan, models will show a {GREEN}FREE{RESET} tag.\n")
 
     selected_lines: list[str] = []
@@ -985,7 +1044,8 @@ def run_setup() -> None:
     gemini_selected = any(cv.startswith("gemini") for cv in selected_lines)
     if gemini_selected:
         from .config import GEMINI_FREE_CACHE
-        print(f"  Fetching Gemini pricing data for accurate free-tier detection...")
+
+        print("  Fetching Gemini pricing data for accurate free-tier detection...")
         with Spinner("Fetching pricing..."):
             try:
                 free_set, paid_set = fetch_gemini_free_tier()
@@ -1019,7 +1079,7 @@ def run_setup() -> None:
                 detail = ""
             print(f"    {GREEN}{prov}{RESET}  {DIM}{detail}{RESET}")
     else:
-        print(f"  No providers marked as free-tier.")
+        print("  No providers marked as free-tier.")
     print(f"\n  {DIM}Run --setup anytime to reconfigure.{RESET}\n")
 
 
@@ -1051,10 +1111,7 @@ def show_help() -> None:
   llm-switchboard --list-models --provider <name>      Filter by provider
   llm-switchboard --select <model_id> [claude-args]    Launch specific model
   llm-switchboard --favorites            List favorite model IDs
-  llm-switchboard --self-test            Run internal tests and exit 0/1
   llm-switchboard --version              Show version
-  llm-switchboard --print-paths          Show config/cache directory paths
-  llm-switchboard --print-endpoints      Show resolved API mode and endpoints
   llm-switchboard --doctor               Run health checks and show diagnostics
   llm-switchboard --clear-detect-cache   Remove endpoint detection cache
 
@@ -1107,13 +1164,19 @@ def _parse_args(argv: list[str]) -> tuple[str | None, str | None, list[str], dic
     filtered = []
     i = 0
     while i < len(argv):
-        if argv[i] == "--api-mode" and i + 1 < len(argv):
+        if argv[i] == "--api-mode":
+            if i + 1 >= len(argv):
+                die("--api-mode requires a value (auto|openai|anthropic)")
             options["api_mode"] = argv[i + 1]
             i += 2
-        elif argv[i] == "--base-url" and i + 1 < len(argv):
+        elif argv[i] == "--base-url":
+            if i + 1 >= len(argv):
+                die("--base-url requires a URL value")
             options["base_url"] = argv[i + 1]
             i += 2
-        elif argv[i] == "--auto-prefer" and i + 1 < len(argv):
+        elif argv[i] == "--auto-prefer":
+            if i + 1 >= len(argv):
+                die("--auto-prefer requires a value (openai|anthropic)")
             options["auto_prefer"] = argv[i + 1]
             i += 2
         else:
@@ -1126,15 +1189,9 @@ def _parse_args(argv: list[str]) -> tuple[str | None, str | None, list[str], dic
 
     first = argv[0]
 
-    # New non-interactive flags
+    # Non-interactive flags
     if first == "--version":
         return "version", None, [], options
-    if first == "--self-test":
-        return "self-test", None, [], options
-    if first == "--print-paths":
-        return "print-paths", None, [], options
-    if first == "--print-endpoints":
-        return "print-endpoints", None, [], options
     if first == "--clear-detect-cache":
         return "clear-detect-cache", None, [], options
     if first == "--doctor":
@@ -1166,7 +1223,9 @@ def _parse_args(argv: list[str]) -> tuple[str | None, str | None, list[str], dic
             elif rest[i] == "--agent-ok":
                 options["agent_ok"] = True
                 i += 1
-            elif rest[i] == "--provider" and i + 1 < len(rest):
+            elif rest[i] == "--provider":
+                if i + 1 >= len(rest):
+                    die("--provider requires a provider name")
                 options["provider"] = rest[i + 1]
                 i += 2
             else:
@@ -1211,15 +1270,23 @@ def _parse_args(argv: list[str]) -> tuple[str | None, str | None, list[str], dic
 def main() -> None:
     # Restore default SIGPIPE so piping to head/tail exits quietly
     import signal
+
     if hasattr(signal, "SIGPIPE"):
         signal.signal(signal.SIGPIPE, signal.SIG_DFL)
 
     os.umask(0o077)
+
+    # Reset module-level state (ensures clean slate when main() is called multiple times)
+    global _RESOLVED_EP, _CLI_API_MODE, _CLI_BASE_URL, _CLI_AUTO_PREFER
+    _RESOLVED_EP = None
+    _CLI_API_MODE = None
+    _CLI_BASE_URL = None
+    _CLI_AUTO_PREFER = None
+
     args = sys.argv[1:]
     cmd, filt, claude_args, options = _parse_args(args)
 
     # Apply global flags
-    global _CLI_API_MODE, _CLI_BASE_URL, _CLI_AUTO_PREFER
     if "api_mode" in options:
         mode_val = options["api_mode"].lower()
         if mode_val not in VALID_MODES:
@@ -1240,20 +1307,6 @@ def main() -> None:
 
     if cmd == "version":
         print(f"llm-switchboard {__version__}")
-        sys.exit(0)
-
-    if cmd == "self-test":
-        _run_self_test()
-        return
-
-    if cmd == "print-paths":
-        print(f"Config dir:  {CONFIG_DIR}")
-        print(f"Cache dir:   {CACHE_DIR}")
-        sys.exit(0)
-
-    if cmd == "print-endpoints":
-        ep = _resolve_api()
-        print(format_endpoint_info(ep))
         sys.exit(0)
 
     if cmd == "clear-detect-cache":
@@ -1335,8 +1388,7 @@ def main() -> None:
         die("OPENWEBUI_API_KEY is not set.\nGenerate one in Open WebUI: Settings > Account > API Keys")
 
     if not PRIVATE_IP_RE.search(OPENWEBUI_URL) and not OPENWEBUI_URL.startswith("https://"):
-        print(f"  {YELLOW}⚠ OPENWEBUI_URL is remote but not HTTPS. API key may be exposed.{RESET}",
-              file=sys.stderr)
+        print(f"  {YELLOW}⚠ OPENWEBUI_URL is remote but not HTTPS. API key may be exposed.{RESET}", file=sys.stderr)
 
     ensure_dirs()
     first_run = not FREE_PROVIDERS_FILE.exists()
@@ -1344,7 +1396,7 @@ def main() -> None:
     if first_run and not IS_STDIN_TTY:
         _write_default_free_config()
 
-    from .tui import run_interactive, launch_claude, has_fzf, run_fzf_search
+    from .tui import has_fzf, launch_claude, run_fzf_search, run_interactive
 
     if cmd == "refresh":
         do_refresh()
@@ -1388,19 +1440,3 @@ def main() -> None:
         if first_run and IS_STDIN_TTY:
             run_setup()
         run_interactive(extra_args=claude_args)
-
-
-def _run_self_test() -> None:
-    """Run the internal test suite."""
-    import unittest
-    # Discover tests from the tests/ directory relative to this package
-    pkg_dir = Path(__file__).resolve().parent.parent
-    test_dir = pkg_dir / "tests"
-    if not test_dir.is_dir():
-        # Fallback: try relative to cwd
-        test_dir = Path("tests")
-    loader = unittest.TestLoader()
-    suite = loader.discover(str(test_dir), pattern="test_*.py", top_level_dir=str(pkg_dir))
-    runner = unittest.TextTestRunner(verbosity=2)
-    result = runner.run(suite)
-    sys.exit(0 if result.wasSuccessful() else 1)

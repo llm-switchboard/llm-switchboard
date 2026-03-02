@@ -3,11 +3,10 @@
 import json
 import sys
 import threading
-import time
 from pathlib import Path
 
-from .config import CONFIG_DIR, USAGE_FILE
-from .util import YELLOW, RESET
+from .config import USAGE_FILE
+from .util import RESET, YELLOW, locked_file
 
 
 class SessionWatcher:
@@ -20,6 +19,7 @@ class SessionWatcher:
         self.input_tokens = 0
         self.output_tokens = 0
         self.message_count = 0
+        self._lock = threading.Lock()
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._pre_existing: dict[str, int] = {}
@@ -38,13 +38,14 @@ class SessionWatcher:
         self._stop.set()
         if self._thread:
             self._thread.join(timeout=2)
-        if self.message_count == 0:
-            return None
-        return {
-            "input_tokens": self.input_tokens,
-            "output_tokens": self.output_tokens,
-            "message_count": self.message_count,
-        }
+        with self._lock:
+            if self.message_count == 0:
+                return None
+            return {
+                "input_tokens": self.input_tokens,
+                "output_tokens": self.output_tokens,
+                "message_count": self.message_count,
+            }
 
     def _find_session_file(self) -> tuple[Path, int] | None:
         if not self.session_dir.is_dir():
@@ -83,9 +84,10 @@ class SessionWatcher:
         inp += usage.get("cache_creation_input_tokens", 0)
         inp += usage.get("cache_read_input_tokens", 0)
         out = usage.get("output_tokens", 0)
-        self.input_tokens += inp
-        self.output_tokens += out
-        self.message_count += 1
+        with self._lock:
+            self.input_tokens += inp
+            self.output_tokens += out
+            self.message_count += 1
 
     def _watch(self) -> None:
         result = self._find_session_file()
@@ -128,11 +130,9 @@ def load_local_usage(usage_file: Path | None = None) -> dict:
         backup = f.with_suffix(".json.bak")
         try:
             f.rename(backup)
-            print(f"  {YELLOW}Warning: usage.json was corrupted. Backed up to {backup.name}{RESET}",
-                  file=sys.stderr)
+            print(f"  {YELLOW}Warning: usage.json was corrupted. Backed up to {backup.name}{RESET}", file=sys.stderr)
         except Exception:
-            print(f"  {YELLOW}Warning: usage.json is corrupted and could not be backed up{RESET}",
-                  file=sys.stderr)
+            print(f"  {YELLOW}Warning: usage.json is corrupted and could not be backed up{RESET}", file=sys.stderr)
         return {"models": {}}
 
 
@@ -157,13 +157,13 @@ def get_all_usage(usage_file: Path | None = None) -> list[dict]:
 
 def record_session(model_id: str, session_data: dict, usage_file: Path | None = None) -> None:
     """Merge session data into usage.json (increment cumulative counters)."""
-    data = load_local_usage(usage_file)
-    models = data.setdefault("models", {})
-    entry = models.setdefault(model_id, {
-        "input_tokens": 0, "output_tokens": 0, "message_count": 0, "sessions": 0
-    })
-    entry["input_tokens"] += session_data["input_tokens"]
-    entry["output_tokens"] += session_data["output_tokens"]
-    entry["message_count"] += session_data["message_count"]
-    entry["sessions"] += 1
-    save_local_usage(data, usage_file)
+    f = usage_file or USAGE_FILE
+    with locked_file(f):
+        data = load_local_usage(f)
+        models = data.setdefault("models", {})
+        entry = models.setdefault(model_id, {"input_tokens": 0, "output_tokens": 0, "message_count": 0, "sessions": 0})
+        entry["input_tokens"] += session_data["input_tokens"]
+        entry["output_tokens"] += session_data["output_tokens"]
+        entry["message_count"] += session_data["message_count"]
+        entry["sessions"] += 1
+        save_local_usage(data, f)
