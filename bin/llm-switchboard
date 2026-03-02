@@ -1,0 +1,27 @@
+#!/usr/bin/env python3
+"""llm-switchboard — interactive model picker for Claude Code via Open WebUI.
+
+Thin entrypoint that delegates to the llm_switchboard package.
+"""
+
+import os
+import sys
+
+# Resolve symlinks so this works when ~/bin/llm-switchboard is a symlink
+_script_dir = os.path.dirname(os.path.realpath(__file__))
+_project_root = os.path.dirname(_script_dir)
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
+
+from llm_switchboard.cli import main
+
+try:
+    main()
+except BrokenPipeError:
+    # Piped to head/tail/etc. — exit quietly
+    # Close stderr to suppress any Python-internal BrokenPipeError on shutdown
+    try:
+        sys.stderr.close()
+    except Exception:
+        pass
+    sys.exit(0)
